@@ -4,7 +4,7 @@ GEO IMPATHON 1.0 • Problem Statement 2.3 (Watershed-Based Water Resource Prior
 
 Implements the complete 6-Section AquaPrior Design System:
 1. Home
-2. Explore Map
+2. Explore Map (Explore Priority Map)
 3. Priority Areas
 4. Possible Solutions
 5. Field Verification
@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import folium
 import numpy as np
@@ -42,12 +42,37 @@ st.set_page_config(
 )
 
 # ============================================================================
-# AQUAPRIOR DESIGN SYSTEM CSS (Matches Mockup Screenshots 1–4)
+# AQUAPRIOR DESIGN SYSTEM CSS (No Radio Dots, No | Caret Cursor, Exact Mockup UI)
 # ============================================================================
 st.markdown(
     """
     <style>
-    /* Global Light Canvas & Typography */
+    /* Global Light Canvas & Disable Unwanted | Text Caret / Selection Cursor */
+    .stApp, body, div, span, p, h1, h2, h3, h4, h5, h6, td, th, label, li {
+        caret-color: transparent !important;
+        user-select: none !important;
+        -webkit-user-select: none !important;
+        cursor: default;
+    }
+    /* Keep normal text cursor ONLY inside actual text inputs & textareas */
+    input[type="text"], textarea {
+        caret-color: #0f172a !important;
+        user-select: text !important;
+        -webkit-user-select: text !important;
+        cursor: text !important;
+    }
+    /* Make dropdowns/selectboxes use pointer cursor, never | caret */
+    [data-baseweb="select"], [data-baseweb="select"] *, [data-baseweb="popover"] * {
+        caret-color: transparent !important;
+        user-select: none !important;
+        cursor: pointer !important;
+    }
+    [data-baseweb="select"] input {
+        caret-color: transparent !important;
+        cursor: pointer !important;
+        width: 0px !important;
+    }
+
     .stApp {
         background-color: #f4f7fb !important;
         color: #0f172a !important;
@@ -66,46 +91,67 @@ st.markdown(
     [data-testid="stSidebar"] * {
         color: #e2e8f0 !important;
     }
-    /* Sidebar Navigation Radio Styling as AquaPrior Menu Pills */
-    [data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label {
-        background: transparent !important;
+
+    /* Sidebar Menu Buttons (No Radio Circles! Clean Left-Aligned Pills) */
+    [data-testid="stSidebar"] .stButton {
+        margin-bottom: -6px !important;
+    }
+    [data-testid="stSidebar"] .stButton > button {
+        width: 100% !important;
+        justify-content: flex-start !important;
+        text-align: left !important;
+        padding: 11px 16px !important;
         border-radius: 10px !important;
-        padding: 10px 14px !important;
-        margin-bottom: 6px !important;
-        transition: all 0.18s ease !important;
-        border: 1px solid transparent !important;
+        font-size: 0.96rem !important;
+        transition: all 0.15s ease !important;
         cursor: pointer !important;
     }
-    [data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label:hover {
-        background: rgba(255, 255, 255, 0.08) !important;
+    /* Inactive Sidebar Menu Button */
+    [data-testid="stSidebar"] .stButton > button[kind="secondary"] {
+        background-color: transparent !important;
+        border: 1px solid transparent !important;
+        color: #cbd5e1 !important;
+        font-weight: 500 !important;
+        box-shadow: none !important;
     }
-    [data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label[data-checked="true"],
-    [data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label:has(input:checked) {
-        background: #1565c0 !important;
+    [data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover {
+        background-color: rgba(255, 255, 255, 0.08) !important;
+        color: #ffffff !important;
+    }
+    /* Active Sidebar Menu Button (Bright Royal Blue Pill) */
+    [data-testid="stSidebar"] .stButton > button[kind="primary"] {
+        background: linear-gradient(90deg, #1565c0 0%, #1d4ed8 100%) !important;
         border: 1px solid #3b82f6 !important;
-        box-shadow: 0 4px 12px rgba(21, 101, 192, 0.45) !important;
+        color: #ffffff !important;
         font-weight: 700 !important;
-    }
-    [data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label > div:first-child {
-        display: none !important;
+        box-shadow: 0 4px 12px rgba(21, 101, 192, 0.45) !important;
     }
 
-    /* Top Header Bar */
-    .aquaprior-topbar {
-        background: #ffffff;
-        border-radius: 14px;
-        padding: 10px 20px;
-        margin-bottom: 16px;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
-        border: 1px solid #e2e8f0;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        gap: 12px;
+    /* Main Content Buttons (High-Contrast Royal Blue) */
+    section.main .stButton > button, section.main .stDownloadButton > button {
+        background-color: #1565c0 !important;
+        color: #ffffff !important;
+        border: 1px solid #1d4ed8 !important;
+        border-radius: 10px !important;
+        padding: 0.58rem 1.15rem !important;
+        font-weight: 700 !important;
+        font-size: 0.93rem !important;
+        box-shadow: 0 3px 8px rgba(21, 101, 192, 0.22) !important;
+        cursor: pointer !important;
     }
+    section.main .stButton > button:hover, section.main .stDownloadButton > button:hover {
+        background-color: #1e40af !important;
+        border-color: #1e3a8a !important;
+        color: #ffffff !important;
+    }
+    section.main .stButton > button p, section.main .stDownloadButton > button p {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+    }
+
+    /* Page Titles */
     .page-title {
-        font-size: 2.0rem;
+        font-size: 2.05rem;
         font-weight: 800;
         color: #0b2239;
         margin: 0 0 2px 0;
@@ -114,7 +160,7 @@ st.markdown(
     .page-subtitle {
         font-size: 1.02rem;
         color: #475569;
-        margin: 0 0 18px 0;
+        margin: 0 0 16px 0;
     }
 
     /* 4 Pastel Summary KPI Cards */
@@ -183,7 +229,7 @@ st.markdown(
         border-radius: 999px; font-weight: 700; font-size: 0.82rem; display: inline-block;
     }
     .pill-conf-high {
-        background: #e0f2fe; color: #0f766e; border: 1px solid #99f6e4;
+        background: #e8f5e9; color: #15803d; border: 1px solid #bbf7d0;
         padding: 5px 12px; border-radius: 999px; font-weight: 600; font-size: 0.8rem; display: inline-block;
     }
     .pill-conf-med {
@@ -193,29 +239,6 @@ st.markdown(
     .btn-view-summary {
         background: #1565c0; color: #ffffff !important; padding: 6px 14px;
         border-radius: 8px; font-weight: 600; font-size: 0.82rem; text-decoration: none; display: inline-block;
-    }
-
-    /* High-Contrast Visible Action Buttons Across Main Content */
-    .stButton > button, .stDownloadButton > button {
-        background-color: #1565c0 !important;
-        color: #ffffff !important;
-        border: 1px solid #1d4ed8 !important;
-        border-radius: 10px !important;
-        padding: 0.55rem 1.1rem !important;
-        font-weight: 700 !important;
-        font-size: 0.92rem !important;
-        box-shadow: 0 3px 8px rgba(21, 101, 192, 0.22) !important;
-        transition: all 0.15s ease !important;
-    }
-    .stButton > button:hover, .stDownloadButton > button:hover {
-        background-color: #1e40af !important;
-        border-color: #1e3a8a !important;
-        color: #ffffff !important;
-        box-shadow: 0 5px 12px rgba(21, 101, 192, 0.35) !important;
-    }
-    .stButton > button p, .stDownloadButton > button p {
-        color: #ffffff !important;
-        font-weight: 700 !important;
     }
 
     /* Priority Areas Table */
@@ -309,6 +332,27 @@ st.markdown(
         background: #cbd5e1;
         margin: 0 12px 20px 12px;
     }
+
+    /* Why It Needs Attention Icon Rows (Explore Map Card) */
+    .driver-item {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 14px;
+        font-size: 0.98rem;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    .driver-circle {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -341,11 +385,13 @@ def load_aquaprior_data():
 
 df_all, ws_geojson_all, str_geojson_all, ml_report = load_aquaprior_data()
 
-# Session State Initialization for Navigation, Active Watershed, and Field Verification Logs
+# Session State Initialization
 if "active_menu" not in st.session_state:
-    st.session_state["active_menu"] = "⚠️ Priority Areas"
+    st.session_state["active_menu"] = "🗺️ Explore Map"
 if "selected_ws_id" not in st.session_state:
     st.session_state["selected_ws_id"] = "MW-024"
+if "map_problem_filter" not in st.session_state:
+    st.session_state["map_problem_filter"] = "All Problems"
 if "verification_records" not in st.session_state:
     st.session_state["verification_records"] = {
         r["watershed_id"]: r.get("verification_status", "Pending")
@@ -360,45 +406,48 @@ if "generated_reports" not in st.session_state:
 
 
 # ============================================================================
-# LEFT SIDEBAR: AQUAPRIOR LOGO & 6 MENU SECTIONS
+# LEFT SIDEBAR: AQUAPRIOR LOGO & 6 FULL-WIDTH PILL MENU BUTTONS (NO DOTS!)
 # ============================================================================
 with st.sidebar:
     st.markdown(
         """
-        <div style="display:flex; align-items:center; gap:12px; padding: 6px 4px 18px 4px; border-bottom: 1px solid rgba(255,255,255,0.12); margin-bottom: 14px;">
+        <div style="display:flex; align-items:center; gap:12px; padding: 4px 4px 20px 4px; border-bottom: 1px solid rgba(255,255,255,0.12); margin-bottom: 14px;">
             <div style="width:40px; height:40px; border-radius:50%; background:linear-gradient(135deg,#38bdf8,#1d4ed8); display:flex; align-items:center; justify-content:center; font-size:1.35rem; box-shadow: 0 3px 10px rgba(56,189,248,0.4);">
                 💧
             </div>
             <div>
                 <div style="font-size:1.45rem; font-weight:800; color:#ffffff; letter-spacing:-0.02em; line-height:1.1;">AquaPrior</div>
-                <div style="font-size:0.75rem; color:#93c5fd;">Watershed Decision System</div>
+                <div style="font-size:0.74rem; color:#93c5fd;">Watershed Decision System</div>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    menu_options = [
-        "🏠 Home",
-        "🗺️ Explore Map",
-        "⚠️ Priority Areas",
-        "💡 Possible Solutions",
-        "📋 Field Verification",
-        "📄 Reports",
+    menu_items = [
+        ("🏠 Home", "🏠  Home"),
+        ("🗺️ Explore Map", "🗺️  Explore Map"),
+        ("⚠️ Priority Areas", "⚠️  Priority Areas"),
+        ("💡 Possible Solutions", "💡  Possible Solutions"),
+        ("📋 Field Verification", "📋  Field Verification"),
+        ("📄 Reports", "📄  Reports"),
     ]
-    selected_menu = st.radio(
-        "Navigation",
-        menu_options,
-        index=menu_options.index(st.session_state["active_menu"]),
-        label_visibility="collapsed",
-    )
-    st.session_state["active_menu"] = selected_menu
+    for menu_key, menu_label in menu_items:
+        is_active = st.session_state["active_menu"] == menu_key
+        if st.button(
+            menu_label,
+            key=f"nav_{menu_key}",
+            type="primary" if is_active else "secondary",
+            use_container_width=True,
+        ):
+            st.session_state["active_menu"] = menu_key
+            st.rerun()
 
-    st.markdown("<hr style='border-color:rgba(255,255,255,0.12); margin:18px 0;'/>", unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:rgba(255,255,255,0.12); margin:22px 0 14px 0;'/>", unsafe_allow_html=True)
     st.markdown(
         """
-        <div style="font-size:0.8rem; color:#94a3b8; line-height:1.5; padding: 0 4px;">
-            <b style="color:#e2e8f0;">🛰️ Earth Observation Feeds</b><br/>
+        <div style="font-size:0.78rem; color:#94a3b8; line-height:1.55; padding: 0 6px;">
+            <b style="color:#e2e8f0;">🛰️ Satellite Feeds (GEE)</b><br/>
             • SRTM 30m DEM & Slope<br/>
             • HydroSHEDS Drainage<br/>
             • CHIRPS Daily Rainfall<br/>
@@ -411,6 +460,7 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
+selected_menu = st.session_state["active_menu"]
 
 # ============================================================================
 # TOP HEADER BAR: DISTRICT SELECTOR, SEARCH BOX & CONFIDENCE BADGE
@@ -439,7 +489,7 @@ with top_c1:
 with top_c2:
     global_search = st.text_input(
         "🔍 Search",
-        placeholder="🔍 Search village, block or watershed (e.g., MW-024, Chengam, Kattankulathur)...",
+        placeholder="🔍 Search village or watershed...",
         label_visibility="collapsed",
     )
 
@@ -449,7 +499,7 @@ with top_c3:
         <div style="display:flex; align-items:center; justify-content:flex-end; gap:12px; padding-top:4px;">
             <span style="font-size:0.84rem; color:#64748b;">Last updated: <b>30 Sep 2026</b></span>
             <span class="pill-conf-high">🛡️ Confidence: High</span>
-            <span style="font-size:1.15rem; cursor:pointer;" title="Notifications">🔔</span>
+            <span style="font-size:1.15rem;" title="Notifications">🔔</span>
             <span style="width:32px; height:32px; border-radius:50%; background:#cbd5e1; display:inline-flex; align-items:center; justify-content:center; font-size:0.9rem;">👤</span>
         </div>
         """,
@@ -478,9 +528,7 @@ if global_search.strip():
 
 def _render_four_kpi_cards(df_subset: pd.DataFrame) -> None:
     """Renders the 4 signature AquaPrior pastel KPI summary cards."""
-    # Scale display counts cleanly or use actual subset counts
     if len(df_subset) <= 12 and selected_district == "Tiruvannamalai District" and not global_search.strip():
-        # Match screenshot reference counts for Tiruvannamalai District view
         urgent_n, monitor_n, improving_n, field_n = 12, 26, 8, 6
     else:
         urgent_n = int(df_subset["priority_class"].isin(["Critical Priority", "High Priority"]).sum())
@@ -550,18 +598,19 @@ def _conf_badge_html(conf_lvl: str) -> str:
 def _build_priority_folium_map(
     df_map: pd.DataFrame,
     color_col: str = "final_priority_score",
-    height_px: int = 440,
+    height_px: int = 460,
     highlight_wid: str | None = None,
+    show_legend_box: bool = True,
 ) -> None:
-    """Builds and renders the interactive Folium map with watershed polygons & stream channels."""
+    """Builds and renders the interactive Folium map with watershed polygons, labels, and legend."""
     center_lat = float(df_map["lat"].mean())
     center_lon = float(df_map["lon"].mean())
     zoom_lvl = 9 if len(df_map) < 20 else 7
 
-    if highlight_wid and highlight_wid in df_map["watershed_id"].values:
+    if highlight_wid and highlight_wid in df_map["watershed_id"].values and len(df_map) == 1:
         h_row = df_map[df_map["watershed_id"] == highlight_wid].iloc[0]
         center_lat, center_lon = float(h_row["lat"]), float(h_row["lon"])
-        zoom_lvl = 10
+        zoom_lvl = 11
 
     m = folium.Map(
         location=[center_lat, center_lon],
@@ -570,9 +619,9 @@ def _build_priority_folium_map(
         control_scale=True,
     )
     folium.TileLayer(
-        tiles="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
-        attr="Google Hybrid",
-        name="Satellite Hybrid View",
+        tiles="https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}",
+        attr="Google Terrain",
+        name="Terrain Relief Map",
         overlay=False,
     ).add_to(m)
 
@@ -581,15 +630,17 @@ def _build_priority_folium_map(
     vmax = float(df_map[color_col].max())
 
     def _poly_color(r: Dict[str, Any]) -> str:
+        wid = r["watershed_id"]
         if color_col == "final_priority_score":
-            return {
-                "Critical Priority": "#ef4444",
-                "High Priority": "#f97316",
-                "Moderate Priority": "#f59e0b",
-                "Low / Stable": "#22c55e",
-            }.get(r["priority_class"], "#3b82f6")
+            if wid == "MW-024" or r["priority_class"] == "Critical Priority":
+                return "#dc2626"
+            if wid == "MW-017" or r["priority_class"] == "High Priority":
+                return "#f97316"
+            if r["priority_class"] == "Moderate Priority":
+                return "#facc15"
+            return "#22c55e"
         ratio = (float(r[color_col]) - vmin) / max(1e-6, vmax - vmin)
-        palette = ["#22c55e", "#84cc16", "#eab308", "#f97316", "#ef4444"]
+        palette = ["#22c55e", "#84cc16", "#facc15", "#f97316", "#dc2626"]
         return palette[min(4, max(0, int(ratio * 4.99)))]
 
     features = []
@@ -622,9 +673,9 @@ def _build_priority_folium_map(
         name="Watershed Priority Zones",
         style_function=lambda f: {
             "fillColor": f["properties"]["fill_color"],
-            "color": "#0b2239" if f["properties"]["is_selected"] else "#334155",
-            "weight": 3.5 if f["properties"]["is_selected"] else 1.6,
-            "fillOpacity": 0.72,
+            "color": "#ffffff",
+            "weight": 3.2 if f["properties"]["is_selected"] else 1.8,
+            "fillOpacity": 0.85 if f["properties"]["is_selected"] else 0.74,
         },
         tooltip=folium.GeoJsonTooltip(
             fields=[
@@ -650,16 +701,35 @@ def _build_priority_folium_map(
         ),
     ).add_to(m)
 
-    # Add pin on highlighted watershed
+    # Add clean white label badge on highlighted watershed (matching MW-024 in mockup!)
     if highlight_wid and highlight_wid in lookup:
         hr = lookup[highlight_wid]
         folium.Marker(
             location=[hr["lat"], hr["lon"]],
-            popup=f"<b>{hr['watershed_id']} ({hr['block_name']})</b><br/>{hr['plain_reason']}",
-            icon=folium.Icon(color="red", icon="info-sign"),
+            icon=folium.DivIcon(
+                html=f"""
+                <div style="transform:translate(-38px,-18px); text-align:center;">
+                    <div style="font-weight:800; color:#ffffff; font-size:13px; text-shadow:0 1px 4px rgba(0,0,0,0.85); white-space:nowrap;">
+                        {hr['watershed_id']}
+                    </div>
+                    <div style="width:12px; height:12px; background:#ffffff; border:3px solid #dc2626; border-radius:50%; margin:2px auto 0 auto; box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>
+                </div>
+                """
+            ),
         ).add_to(m)
 
-    folium.LayerControl(collapsed=True).add_to(m)
+    # Bottom-left floating legend matching Explore Priority Map mockup
+    if show_legend_box:
+        legend_html = """
+        <div style="position: fixed; bottom: 22px; left: 22px; z-index: 9999; background: rgba(255,255,255,0.95); padding: 12px 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); font-family: sans-serif; font-size: 13px; color: #0f172a; border: 1px solid #e2e8f0;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#dc2626; display:inline-block;"></span> <b>Very High</b></div>
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#f97316; display:inline-block;"></span> <b>High</b></div>
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#facc15; display:inline-block;"></span> <b>Monitor</b></div>
+            <div style="display:flex; align-items:center; gap:8px;"><span style="width:14px; height:14px; border-radius:50%; background:#22c55e; display:inline-block;"></span> <b>Stable</b></div>
+        </div>
+        """
+        m.get_root().html.add_child(folium.Element(legend_html))
+
     st_folium(m, width=None, height=height_px, returned_objects=[])
 
 
@@ -719,7 +789,6 @@ if selected_menu == "🏠 Home":
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col_h2:
-        # Selected Watershed Summary Card
         sel_id = st.session_state["selected_ws_id"]
         if sel_id not in df_dist["watershed_id"].values:
             sel_id = df_dist.sort_values("final_priority_score", ascending=False).iloc[0]["watershed_id"]
@@ -754,7 +823,6 @@ if selected_menu == "🏠 Home":
             st.session_state["active_menu"] = "📋 Field Verification"
             st.rerun()
 
-        # Ranked Priority Queue Mini Table
         st.markdown('<div class="ap-card"><h4 style="margin-top:0; color:#0b2239;">🚨 Ranked Priority List</h4>', unsafe_allow_html=True)
         q_df = df_dist.sort_values("final_priority_score", ascending=False).head(6)
         rows_html = ""
@@ -781,145 +849,141 @@ if selected_menu == "🏠 Home":
 
 
 # ============================================================================
-# SECTION 2: 🗺️ EXPLORE MAP
+# SECTION 2: 🗺️ EXPLORE MAP (Matches Screenshot "Explore Priority Map" 100%!)
 # ============================================================================
 elif selected_menu == "🗺️ Explore Map":
-    st.markdown('<div class="page-title">Explore Map</div>', unsafe_allow_html=True)
+    dist_short = selected_district.replace(" District", "").split(" (")[0]
+    st.markdown('<div class="page-title">Explore Priority Map</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="page-subtitle">Interactive multi-sensor satellite layers, problem filters, and micro-watershed preview</div>',
+        f'<div class="page-subtitle">📍 Tamil Nadu &nbsp;❯&nbsp; <b>{dist_short}</b></div>',
         unsafe_allow_html=True,
     )
 
-    fcol1, fcol2, fcol3 = st.columns([1.2, 1.3, 1.1])
-    with fcol1:
-        prob_filter = st.selectbox(
-            "Problem Filter",
-            [
-                "All Watershed Problems",
-                "Surface Water Decreased (Eri Loss)",
-                "Vegetation Declining (Low NDVI)",
-                "Rapid Urban Growth (Impervious)",
-                "Steep Runoff & Soil Erosion",
-                "Severe Rainfall Deficit & GW Stress",
-            ],
-        )
-    with fcol2:
-        sat_layer_map = {
-            "Colour-Coded Priority Map (Default)": "final_priority_score",
-            "Objective: Water Scarcity Priority": "priority_water_scarcity",
-            "Objective: Runoff & Erosion Priority": "priority_runoff_erosion",
-            "Objective: Groundwater Recharge Priority": "priority_gw_recharge",
-            "Objective: Surface-Water Restoration": "priority_surface_restoration",
-            "Satellite 1: SRTM DEM Elevation (m)": "dem_elevation_m",
-            "Satellite 2: Terrain Slope (°)": "slope_deg",
-            "Satellite 3: Drainage Density (km/km²)": "drainage_density_km_km2",
-            "Satellite 4: CHIRPS Rainfall (mm/yr)": "rainfall_annual_mm",
-            "Satellite 5: Sentinel-2 NDVI": "ndvi_mean",
-            "Satellite 6: Dynamic World Built-Up (%)": "builtup_pct",
-            "Satellite 7: Soil Infiltration Capacity": "soil_infiltration_score",
-            "Satellite 8: JRC Surface Water Occurrence (%)": "water_occurrence_pct",
-        }
-        chosen_layer_label = st.selectbox("Satellite / Priority Layer", list(sat_layer_map.keys()))
-        chosen_layer_col = sat_layer_map[chosen_layer_label]
+    # 5 Problem Filter Pills Row matching the screenshot
+    pf_cols = st.columns(5, gap="small")
+    problem_pills = [
+        ("All Problems", "⊞  All Problems"),
+        ("Water Scarcity", "💧  Water Scarcity"),
+        ("Vegetation Loss", "🌱  Vegetation Loss"),
+        ("Surface-water Decline", "🏢  Surface-water Decline"),
+        ("Urban Growth", "🏙️  Urban Growth"),
+    ]
+    for idx_p, (p_key, p_lbl) in enumerate(problem_pills):
+        if pf_cols[idx_p].button(p_lbl, key=f"pf_{p_key}", use_container_width=True):
+            st.session_state["map_problem_filter"] = p_key
 
+    active_pf = st.session_state["map_problem_filter"]
     df_map_filtered = df_dist.copy()
-    if "Surface Water" in prob_filter:
-        df_map_filtered = df_map_filtered[df_map_filtered["water_10yr_decline_pct"] >= 18.0]
-    elif "Vegetation" in prob_filter:
-        df_map_filtered = df_map_filtered[df_map_filtered["ndvi_5yr_trend"] <= -0.04]
-    elif "Urban" in prob_filter:
-        df_map_filtered = df_map_filtered[df_map_filtered["builtup_5yr_growth_pct"] >= 15.0]
-    elif "Erosion" in prob_filter:
-        df_map_filtered = df_map_filtered[df_map_filtered["slope_deg"] >= 4.0]
-    elif "Rainfall" in prob_filter:
-        df_map_filtered = df_map_filtered[df_map_filtered["rainfall_anomaly_pct"] <= -12.0]
-    if df_map_filtered.empty:
-        df_map_filtered = df_dist.copy()
+    color_metric = "final_priority_score"
+    if active_pf == "Water Scarcity":
+        color_metric = "priority_water_scarcity"
+    elif active_pf == "Vegetation Loss":
+        color_metric = "priority_runoff_erosion"
+    elif active_pf == "Surface-water Decline":
+        color_metric = "priority_surface_restoration"
+    elif active_pf == "Urban Growth":
+        color_metric = "priority_urban_rwh"
 
-    with fcol3:
-        ws_pick_list = [
-            f"{r['watershed_id']} — {r['block_name']}" for _, r in df_map_filtered.iterrows()
-        ]
-        picked_ws = st.selectbox("Inspect Watershed on Map", ws_pick_list)
-        picked_wid = picked_ws.split(" — ")[0]
-        st.session_state["selected_ws_id"] = picked_wid
+    mcol1, mcol2 = st.columns([1.85, 1.0], gap="medium")
 
-    mcol1, mcol2 = st.columns([1.55, 1.0], gap="medium")
     with mcol1:
-        st.markdown(f'<div class="ap-card"><h4 style="margin-top:0;">🗺️ {chosen_layer_label}</h4>', unsafe_allow_html=True)
+        st.markdown('<div class="ap-card" style="padding:12px;">', unsafe_allow_html=True)
+        picked_wid = st.session_state["selected_ws_id"]
+        if picked_wid not in df_map_filtered["watershed_id"].values:
+            picked_wid = df_map_filtered.sort_values("final_priority_score", ascending=False).iloc[0]["watershed_id"]
+            st.session_state["selected_ws_id"] = picked_wid
+
         _build_priority_folium_map(
             df_map_filtered,
-            color_col=chosen_layer_col,
-            height_px=520,
+            color_col=color_metric,
+            height_px=510,
             highlight_wid=picked_wid,
+            show_legend_box=True,
         )
         st.markdown("</div>", unsafe_allow_html=True)
 
     with mcol2:
+        # Watershed Selector at top of right card so user can switch MW-024 or any unit
+        ws_pick_list = [
+            f"{r['watershed_id']} — {r['block_name']}" for _, r in df_map_filtered.iterrows()
+        ]
+        curr_w_idx = 0
+        for i_w, w_lbl in enumerate(ws_pick_list):
+            if picked_wid in w_lbl:
+                curr_w_idx = i_w
+                break
+        chosen_ws_str = st.selectbox(
+            "Select Watershed",
+            ws_pick_list,
+            index=curr_w_idx,
+            label_visibility="collapsed",
+        )
+        picked_wid = chosen_ws_str.split(" — ")[0]
+        st.session_state["selected_ws_id"] = picked_wid
         prow = df_all[df_all["watershed_id"] == picked_wid].iloc[0]
+
+        # Right Preview Card matching the exact Explore Priority Map screenshot!
         st.markdown(
             f"""
-            <div class="ap-card">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span style="font-size:0.82rem; color:#64748b;">Watershed Preview • Updated 30 Sep 2026</span>
-                    {_conf_badge_html(prow['confidence_level'])}
+            <div class="ap-card" style="padding: 24px;">
+                <div style="font-size:2.0rem; font-weight:800; color:#0b2239; margin-bottom:14px;">
+                    {prow['watershed_id']}
                 </div>
-                <h3 style="margin:8px 0 4px 0; color:#0b2239;">{prow['watershed_id']} — {prow['block_name']}</h3>
-                <div style="margin-bottom:10px;">{_status_badge_html(prow['priority_class'], prow['watershed_id'])} &nbsp; <b>Score: {prow['final_priority_score']}/100</b></div>
-                <p style="font-size:0.92rem; color:#334155; background:#f8fafc; padding:10px 12px; border-radius:8px; border-left:4px solid #1565c0;">
-                    <b>Main Reason:</b> {prow['plain_reason']}<br/>
-                    <b>Technical Drivers:</b> {prow['top_stress_drivers']}
-                </p>
-                <hr style="border-color:#f1f5f9;"/>
-                <div style="font-size:0.86rem; line-height:1.65;">
-                    • <b>1. SRTM DEM & Slope:</b> {prow['dem_elevation_m']} m | {prow['slope_deg']}°<br/>
-                    • <b>2. Drainage Density:</b> {prow['drainage_density_km_km2']} km/km² (Order {prow['stream_order']})<br/>
-                    • <b>3. CHIRPS Rainfall:</b> {prow['rainfall_annual_mm']:.0f} mm ({prow['rainfall_anomaly_pct']:+.1f}% anomaly)<br/>
-                    • <b>4. Sentinel-2 NDVI:</b> {prow['ndvi_mean']:.2f} ({prow['ndvi_5yr_trend']:+.3f} 5-yr trend)<br/>
-                    • <b>5. Dynamic World LULC:</b> {prow['dominant_lulc']} (+{prow['builtup_5yr_growth_pct']}% urban growth)<br/>
-                    • <b>6. Soil Infiltration:</b> {prow['soil_texture']} (HSG-{prow['hydrologic_soil_group']}, Score {prow['soil_infiltration_score']})<br/>
-                    • <b>7. JRC Water Occurrence:</b> {prow['water_occurrence_pct']}% (-{prow['water_10yr_decline_pct']}% 10-yr decline)
+
+                <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:14px; padding:16px 18px; display:flex; align-items:center; gap:14px; margin-bottom:16px;">
+                    <div style="width:46px; height:46px; border-radius:50%; background:#dc2626; color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:1.35rem; flex-shrink:0;">
+                        ⚠️
+                    </div>
+                    <div>
+                        <div style="font-size:1.12rem; font-weight:800; color:#991b1b;">Urgent Attention</div>
+                        <div style="font-size:0.92rem; color:#b91c1c; font-weight:500;">{prow['trend_class']}</div>
+                    </div>
+                </div>
+
+                <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid #f1f5f9;">
+                    {_conf_badge_html(prow['confidence_level'])}
+                    <span style="font-size:0.84rem; color:#475569;">📅 Last updated: <b>30 Sep 2026</b></span>
+                </div>
+
+                <div style="font-size:1.12rem; font-weight:800; color:#0b2239; margin-bottom:16px;">
+                    Why it needs attention
+                </div>
+
+                <div class="driver-item">
+                    <div class="driver-circle" style="background:#e0f2fe; color:#0284c7;">💧</div>
+                    <div>Surface water decreased (-{prow['water_10yr_decline_pct']:.0f}%)</div>
+                </div>
+
+                <div class="driver-item">
+                    <div class="driver-circle" style="background:#dcfce7; color:#15803d;">🌱</div>
+                    <div>Vegetation is declining (NDVI {prow['ndvi_5yr_trend']:+.2f})</div>
+                </div>
+
+                <div class="driver-item" style="margin-bottom:22px;">
+                    <div class="driver-circle" style="background:#fee2e2; color:#dc2626;">🏢</div>
+                    <div>Built-up area increased (+{prow['builtup_5yr_growth_pct']:.0f}%)</div>
                 </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        st.markdown(
-            f'<div class="ap-card"><h4 style="margin:0 0 8px 0; color:#0b2239; font-size:1.05rem;">📊 Why is {picked_wid} Prioritized? (SHAP-Style Drivers)</h4>',
-            unsafe_allow_html=True,
-        )
-        attr_df = compute_local_feature_attributions(prow, df_all)
-        fig_local = px.bar(
-            attr_df,
-            x="Priority Impact (pts)",
-            y="Indicator",
-            orientation="h",
-            color="Direction",
-            color_discrete_map={"Increases Priority (+)": "#ef4444", "Reduces Priority (-)": "#22c55e"},
-            text="Priority Impact (pts)",
-            height=310,
-        )
-        fig_local.update_traces(textposition="outside", cliponaxis=False)
-        fig_local.update_layout(
-            margin=dict(l=10, r=40, t=10, b=25),
-            showlegend=False,
-            yaxis_title="",
-            xaxis_title="Priority Impact (pts)",
-            paper_bgcolor="#ffffff",
-            plot_bgcolor="#ffffff",
-        )
-        st.plotly_chart(fig_local, use_container_width=True, config={"displayModeBar": False})
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # Visible Action Buttons at the bottom of the right panel
-        em_b1, em_b2 = st.columns(2)
-        if em_b1.button(f"💡 Solutions for {picked_wid}", use_container_width=True):
+        if st.button("📄  View Full Details     ❯", use_container_width=True):
             st.session_state["active_menu"] = "💡 Possible Solutions"
             st.rerun()
-        if em_b2.button(f"📋 Verify {picked_wid}", use_container_width=True):
-            st.session_state["active_menu"] = "📋 Field Verification"
-            st.rerun()
+
+        with st.expander("🛰️ View All 8 Satellite Parameters & SHAP Impact"):
+            st.markdown(
+                f"""
+                • **1. SRTM DEM & Slope:** {prow['dem_elevation_m']} m | {prow['slope_deg']}°  
+                • **2. Drainage Density:** {prow['drainage_density_km_km2']} km/km² (Order {prow['stream_order']})  
+                • **3. CHIRPS Rainfall:** {prow['rainfall_annual_mm']:.0f} mm ({prow['rainfall_anomaly_pct']:+.1f}% anomaly)  
+                • **4. Sentinel-2 NDVI:** {prow['ndvi_mean']:.2f} ({prow['ndvi_5yr_trend']:+.3f} 5-yr trend)  
+                • **5. Dynamic World LULC:** {prow['dominant_lulc']} (+{prow['builtup_5yr_growth_pct']}% urban growth)  
+                • **6. Soil Infiltration:** {prow['soil_texture']} (HSG-{prow['hydrologic_soil_group']}, Score {prow['soil_infiltration_score']})  
+                • **7. JRC Water Occurrence:** {prow['water_occurrence_pct']}% (-{prow['water_10yr_decline_pct']}% 10-yr decline)
+                """
+            )
 
 
 # ============================================================================
@@ -982,7 +1046,6 @@ elif selected_menu == "⚠️ Priority Areas":
         elif sort_mode == "Sort: Highest Confidence":
             df_queue = df_queue.sort_values("data_confidence_pct", ascending=False)
         else:
-            # Put featured Tiruvannamalai order first if Tiruvannamalai District is selected
             if selected_district == "Tiruvannamalai District" and not pa_search.strip() and urgency_filter == "All Statuses":
                 priority_order = ["MW-024", "MW-017", "MW-031", "MW-006", "MW-012", "MW-028", "MW-029", "MW-030"]
                 df_queue["_rank_ord"] = df_queue["watershed_id"].apply(
@@ -992,7 +1055,6 @@ elif selected_menu == "⚠️ Priority Areas":
             else:
                 df_queue = df_queue.sort_values("final_priority_score", ascending=False)
 
-        # Render Styled HTML Table matching Screenshot 1
         table_rows_html = ""
         for idx_num, (_, row) in enumerate(df_queue.head(12).iterrows(), 1):
             num_bg = "#fee2e2" if idx_num <= 2 else ("#fef3c7" if idx_num <= 4 else "#dcfce7")
@@ -1035,7 +1097,6 @@ elif selected_menu == "⚠️ Priority Areas":
             unsafe_allow_html=True,
         )
 
-        # Interactive Action Selector below table to open any row's summary or solutions
         st.markdown("<div style='margin-top:14px;'></div>", unsafe_allow_html=True)
         act_c1, act_c2, act_c3 = st.columns([1.6, 1.0, 1.0])
         with act_c1:
@@ -1103,7 +1164,6 @@ elif selected_menu == "💡 Possible Solutions":
         unsafe_allow_html=True,
     )
 
-    # Blue Info Alert Banner
     st.markdown(
         """
         <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:12px 18px; margin-bottom:16px; display:flex; align-items:center; gap:12px; color:#1e3a8a; font-weight:600; font-size:0.93rem;">
@@ -1114,7 +1174,6 @@ elif selected_menu == "💡 Possible Solutions":
         unsafe_allow_html=True,
     )
 
-    # Watershed Selector & Category Pills
     sol_top1, sol_top2 = st.columns([1.1, 2.4])
     with sol_top1:
         ws_list_sol = [
@@ -1130,16 +1189,14 @@ elif selected_menu == "💡 Possible Solutions":
         st.session_state["selected_ws_id"] = sol_wid
 
     with sol_top2:
-        sol_category = st.radio(
-            "Solution Category",
-            ["All", "Structural", "Vegetation", "Agricultural", "Urban", "Restoration"],
-            horizontal=True,
+        sol_category = st.selectbox(
+            "Filter Solution Category",
+            ["Category: All", "Category: Structural", "Category: Vegetation", "Category: Agricultural", "Category: Urban", "Category: Restoration"],
             label_visibility="collapsed",
-        )
+        ).replace("Category: ", "")
 
     s_row = df_all[df_all["watershed_id"] == sol_wid].iloc[0]
 
-    # Build the Solutions Catalog tailored to the selected watershed
     solutions_data = [
         {
             "title": "Restore Existing Waterbody",
@@ -1248,7 +1305,6 @@ elif selected_menu == "💡 Possible Solutions":
         grid_cols = st.columns(2, gap="medium")
         for idx_s, sol in enumerate(solutions_data):
             with grid_cols[idx_s % 2]:
-                # Build 4-segment progress bar HTML
                 segs_html = '<span class="seg-bar">'
                 for b_i in range(4):
                     b_col = sol["bar_color"] if b_i < sol["bars_filled"] else "#e2e8f0"
@@ -1358,7 +1414,6 @@ elif selected_menu == "📋 Field Verification":
     stages = ["Pending", "Verified", "Planned", "Completed"]
     stage_idx = stages.index(curr_stage) if curr_stage in stages else 0
 
-    # 4-Step Progress Tracker HTML
     def _step_node(idx_s: int, label: str) -> str:
         active = idx_s <= stage_idx
         bg = "#1565c0" if active else "#cbd5e1"
@@ -1389,7 +1444,6 @@ elif selected_menu == "📋 Field Verification":
 
     with col_fv_left:
         st.markdown('<div class="ap-card">', unsafe_allow_html=True)
-        # Watershed Inspection Selector
         fv_select_list = [
             f"Inspection: {r['watershed_id']} — {r['block_name']}" for _, r in df_all.iterrows()
         ]
@@ -1483,6 +1537,7 @@ elif selected_menu == "📋 Field Verification":
             color_col="final_priority_score",
             height_px=195,
             highlight_wid=fv_wid,
+            show_legend_box=False,
         )
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1539,10 +1594,9 @@ elif selected_menu == "📄 Reports":
             unsafe_allow_html=True,
         )
 
-        report_type = st.radio(
+        report_type = st.selectbox(
             "Report type",
             ["🗺️ District Summary", "🏞️ Watershed Summary", "📊 Priority Ranking", "📋 Field Verification"],
-            horizontal=True,
         )
 
         rc1, rc2 = st.columns(2)
@@ -1568,7 +1622,6 @@ elif selected_menu == "📄 Reports":
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # Recent Reports Card with Working Downloads
         st.markdown('<div class="ap-card"><h4 style="margin-top:0; color:#0b2239; font-size:1.15rem;">Recent Reports</h4>', unsafe_allow_html=True)
         for idx_r, rep in enumerate(st.session_state["generated_reports"][:5]):
             icon_f = "📕" if rep["fmt"] == "PDF" else ("📗" if rep["fmt"] == "CSV" else "🟣")
@@ -1637,6 +1690,7 @@ elif selected_menu == "📄 Reports":
             color_col="final_priority_score",
             height_px=190,
             highlight_wid=prev_wid,
+            show_legend_box=False,
         )
         st.markdown(
             f"""
