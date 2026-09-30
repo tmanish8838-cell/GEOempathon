@@ -2,13 +2,13 @@
 AquaPrior — Explainable Micro-Watershed Priority & Intervention Decision-Support System
 GEO IMPATHON 1.0 • Problem Statement 2.3 (Watershed-Based Water Resource Priority Mapping)
 
-Implements the complete 6-Section AquaPrior Design System:
+Implements the complete 6-Section AquaPrior Design System with full backend interactivity:
 1. Home
 2. Explore Map (Explore Priority Map)
-3. Priority Areas
-4. Possible Solutions
-5. Field Verification
-6. Reports
+3. Priority Areas (Interactive Action Queue with working View Summary buttons)
+4. Possible Solutions (Interactive Solution Cards with working View Details buttons)
+5. Field Verification (Interactive Stepper & Inspection Form)
+6. Reports (Interactive Report Generator, Preview & CSV/GeoJSON Downloads)
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import folium
 import numpy as np
@@ -29,6 +29,7 @@ from streamlit_folium import st_folium
 from data.tn_watersheds_generator import save_generated_artifacts
 from gee_pipeline.extract_tn_watersheds import GEE_JS_CODE_EDITOR_SNIPPET
 from models.watershed_ml_engine import (
+    INTERVENTION_CATALOG,
     compute_local_feature_attributions,
     compute_priority_and_suitability_scores,
     run_clustering_and_ml_pipeline,
@@ -41,10 +42,20 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+
+def _html(raw_html: str) -> None:
+    """
+    Renders HTML safely via st.markdown by stripping leading indentation and blank lines
+    so Markdown never mistakes indented HTML blocks for <pre><code> blocks.
+    """
+    cleaned = "\n".join(line.strip() for line in raw_html.splitlines() if line.strip())
+    st.markdown(cleaned, unsafe_allow_html=True)
+
+
 # ============================================================================
-# AQUAPRIOR DESIGN SYSTEM CSS (No Radio Dots, No | Caret Cursor, Exact Mockup UI)
+# AQUAPRIOR DESIGN SYSTEM CSS
 # ============================================================================
-st.markdown(
+_html(
     """
     <style>
     /* Global Light Canvas & Disable Unwanted | Text Caret / Selection Cursor */
@@ -54,14 +65,12 @@ st.markdown(
         -webkit-user-select: none !important;
         cursor: default;
     }
-    /* Keep normal text cursor ONLY inside actual text inputs & textareas */
     input[type="text"], textarea {
         caret-color: #0f172a !important;
         user-select: text !important;
         -webkit-user-select: text !important;
         cursor: text !important;
     }
-    /* Make dropdowns/selectboxes use pointer cursor, never | caret */
     [data-baseweb="select"], [data-baseweb="select"] *, [data-baseweb="popover"] * {
         caret-color: transparent !important;
         user-select: none !important;
@@ -92,9 +101,9 @@ st.markdown(
         color: #e2e8f0 !important;
     }
 
-    /* Sidebar Menu Buttons (No Radio Circles! Clean Left-Aligned Pills) */
+    /* Sidebar Menu Buttons (No Radio Dots! Clean Full-Width Left-Aligned Pills) */
     [data-testid="stSidebar"] .stButton {
-        margin-bottom: -6px !important;
+        margin-bottom: -4px !important;
     }
     [data-testid="stSidebar"] .stButton > button {
         width: 100% !important;
@@ -106,7 +115,6 @@ st.markdown(
         transition: all 0.15s ease !important;
         cursor: pointer !important;
     }
-    /* Inactive Sidebar Menu Button */
     [data-testid="stSidebar"] .stButton > button[kind="secondary"] {
         background-color: transparent !important;
         border: 1px solid transparent !important;
@@ -118,7 +126,6 @@ st.markdown(
         background-color: rgba(255, 255, 255, 0.08) !important;
         color: #ffffff !important;
     }
-    /* Active Sidebar Menu Button (Bright Royal Blue Pill) */
     [data-testid="stSidebar"] .stButton > button[kind="primary"] {
         background: linear-gradient(90deg, #1565c0 0%, #1d4ed8 100%) !important;
         border: 1px solid #3b82f6 !important;
@@ -133,10 +140,10 @@ st.markdown(
         color: #ffffff !important;
         border: 1px solid #1d4ed8 !important;
         border-radius: 10px !important;
-        padding: 0.58rem 1.15rem !important;
+        padding: 0.5rem 1.0rem !important;
         font-weight: 700 !important;
-        font-size: 0.93rem !important;
-        box-shadow: 0 3px 8px rgba(21, 101, 192, 0.22) !important;
+        font-size: 0.88rem !important;
+        box-shadow: 0 2px 6px rgba(21, 101, 192, 0.20) !important;
         cursor: pointer !important;
     }
     section.main .stButton > button:hover, section.main .stDownloadButton > button:hover {
@@ -236,34 +243,6 @@ st.markdown(
         background: #fef3c7; color: #b45309; border: 1px solid #fde68a;
         padding: 5px 12px; border-radius: 999px; font-weight: 600; font-size: 0.8rem; display: inline-block;
     }
-    .btn-view-summary {
-        background: #1565c0; color: #ffffff !important; padding: 6px 14px;
-        border-radius: 8px; font-weight: 600; font-size: 0.82rem; text-decoration: none; display: inline-block;
-    }
-
-    /* Priority Areas Table */
-    .ap-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.92rem;
-    }
-    .ap-table th {
-        text-align: left;
-        padding: 12px 10px;
-        color: #475569;
-        font-weight: 600;
-        border-bottom: 2px solid #f1f5f9;
-        background: #f8fafc;
-    }
-    .ap-table td {
-        padding: 14px 10px;
-        border-bottom: 1px solid #f1f5f9;
-        color: #0f172a;
-        vertical-align: middle;
-    }
-    .ap-table tr:hover {
-        background: #f8fafc;
-    }
 
     /* Right Review Guide Cards */
     .review-step-card {
@@ -282,7 +261,7 @@ st.markdown(
         padding: 18px;
         border: 1px solid #e2e8f0;
         box-shadow: 0 3px 10px rgba(15, 23, 42, 0.04);
-        margin-bottom: 16px;
+        margin-bottom: 8px;
     }
     .seg-bar {
         display: inline-flex;
@@ -339,23 +318,22 @@ st.markdown(
         align-items: center;
         gap: 14px;
         margin-bottom: 14px;
-        font-size: 0.98rem;
+        font-size: 0.96rem;
         font-weight: 600;
         color: #1e293b;
     }
     .driver-circle {
-        width: 42px;
-        height: 42px;
+        width: 40px;
+        height: 40px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.2rem;
+        font-size: 1.15rem;
         flex-shrink: 0;
     }
     </style>
-    """,
-    unsafe_allow_html=True,
+    """
 )
 
 
@@ -405,11 +383,136 @@ if "generated_reports" not in st.session_state:
     ]
 
 
+def _status_badge_html(pclass: str, wid: str = "") -> str:
+    if wid == "MW-024" or pclass == "Critical Priority":
+        return '<span class="pill-very-high">⚠️ Very High</span>'
+    if wid == "MW-017" or pclass == "High Priority":
+        return '<span class="pill-high">⚠️ High</span>'
+    if pclass == "Moderate Priority":
+        return '<span class="pill-monitor">🕒 Monitor</span>'
+    return '<span class="pill-stable">🌱 Stable</span>'
+
+
+def _conf_badge_html(conf_lvl: str) -> str:
+    if conf_lvl == "High":
+        return '<span class="pill-conf-high">🛡️ Confidence: High</span>'
+    return '<span class="pill-conf-med">🛡️ Confidence: Medium</span>'
+
+
 # ============================================================================
-# LEFT SIDEBAR: AQUAPRIOR LOGO & 6 FULL-WIDTH PILL MENU BUTTONS (NO DOTS!)
+# INTERACTIVE BACKEND MODAL DIALOGS (When clicking View Summary / View Details)
+# ============================================================================
+@st.dialog("🌊 Watershed Full Diagnostic & Satellite Summary", width="large")
+def open_watershed_summary_dialog(wid: str) -> None:
+    w = df_all[df_all["watershed_id"] == wid].iloc[0]
+    _html(
+        f"""
+        <div style="background:#f8fafc; padding:16px 20px; border-radius:12px; border-left:5px solid #1565c0; margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3 style="margin:0; color:#0b2239;">{w['watershed_id']} — {w['block_name']} ({w['district']})</h3>
+                {_status_badge_html(w['priority_class'], w['watershed_id'])}
+            </div>
+            <p style="margin:6px 0 0 0; color:#334155; font-size:0.94rem;">
+                <b>Catchment:</b> {w['name']} ({w['area_km2']} km²) &nbsp;|&nbsp;
+                <b>Priority Score:</b> {w['final_priority_score']}/100 &nbsp;|&nbsp;
+                <b>Trend:</b> {w['trend_class']}
+            </p>
+            <p style="margin:6px 0 0 0; color:#1e3a8a; font-size:0.92rem;">
+                <b>Main Reason:</b> {w['plain_reason']} ({w['top_stress_drivers']})
+            </p>
+        </div>
+        """
+    )
+
+    d_col1, d_col2 = st.columns([1.1, 1.0])
+    with d_col1:
+        st.markdown("##### 🛰️ 8 Satellite Parameters (Google Earth Engine)")
+        sat_table = pd.DataFrame(
+            [
+                {"Parameter": "1. SRTM DEM Elevation", "Value": f"{w['dem_elevation_m']} m (Relief: {w['dem_relief_m']} m)"},
+                {"Parameter": "2. Terrain Slope", "Value": f"{w['slope_deg']}°"},
+                {"Parameter": "3. Drainage Density", "Value": f"{w['drainage_density_km_km2']} km/km² (Order {w['stream_order']})"},
+                {"Parameter": "4. CHIRPS Rainfall", "Value": f"{w['rainfall_annual_mm']:.0f} mm ({w['rainfall_anomaly_pct']:+.1f}% anomaly)"},
+                {"Parameter": "5. Sentinel-2 NDVI", "Value": f"{w['ndvi_mean']:.2f} ({w['ndvi_5yr_trend']:+.3f} 5-yr trend)"},
+                {"Parameter": "6. Dynamic World LULC", "Value": f"{w['dominant_lulc']} (+{w['builtup_5yr_growth_pct']}% urban growth)"},
+                {"Parameter": "7. Soil Infiltration", "Value": f"{w['soil_texture']} (HSG-{w['hydrologic_soil_group']}, Score {w['soil_infiltration_score']})"},
+                {"Parameter": "8. JRC Surface Water", "Value": f"Occ: {w['water_occurrence_pct']}% (-{w['water_10yr_decline_pct']}% 10-yr decline)"},
+            ]
+        )
+        st.dataframe(sat_table, use_container_width=True, hide_index=True)
+
+    with d_col2:
+        st.markdown("##### 📊 SHAP-Style Priority Drivers")
+        attr_df = compute_local_feature_attributions(w, df_all)
+        fig_d = px.bar(
+            attr_df,
+            x="Priority Impact (pts)",
+            y="Indicator",
+            orientation="h",
+            color="Direction",
+            color_discrete_map={"Increases Priority (+)": "#ef4444", "Reduces Priority (-)": "#22c55e"},
+            text="Priority Impact (pts)",
+            height=290,
+        )
+        fig_d.update_traces(textposition="outside", cliponaxis=False)
+        fig_d.update_layout(
+            margin=dict(l=5, r=35, t=10, b=20),
+            showlegend=False,
+            yaxis_title="",
+            paper_bgcolor="#ffffff",
+            plot_bgcolor="#ffffff",
+        )
+        st.plotly_chart(fig_d, use_container_width=True, config={"displayModeBar": False})
+
+    act1, act2, act3 = st.columns(3)
+    if act1.button("💡 Go to Possible Solutions", key=f"dlg_sol_{wid}", use_container_width=True):
+        st.session_state["selected_ws_id"] = wid
+        st.session_state["active_menu"] = "💡 Possible Solutions"
+        st.rerun()
+    if act2.button("📋 Go to Field Verification", key=f"dlg_fv_{wid}", use_container_width=True):
+        st.session_state["selected_ws_id"] = wid
+        st.session_state["active_menu"] = "📋 Field Verification"
+        st.rerun()
+    if act3.button("🗺️ Locate on Explore Map", key=f"dlg_map_{wid}", use_container_width=True):
+        st.session_state["selected_ws_id"] = wid
+        st.session_state["active_menu"] = "🗺️ Explore Map"
+        st.rerun()
+
+
+@st.dialog("🛠️ Intervention Engineering & Suitability Details", width="large")
+def open_solution_details_dialog(sol: Dict[str, Any], w: pd.Series) -> None:
+    _html(
+        f"""
+        <div style="background:#f8fafc; padding:16px 20px; border-radius:12px; border-left:5px solid #16a34a; margin-bottom:14px;">
+            <h3 style="margin:0; color:#0b2239;">{sol['svg_icon']} {sol['title']} — {w['watershed_id']} ({w['block_name']})</h3>
+            <p style="margin:6px 0 0 0; color:#334155; font-size:0.94rem;">
+                <b>Category:</b> {sol['category']} &nbsp;|&nbsp;
+                <b>Technical Suitability:</b> <span style="color:{sol['suit_col']}; font-weight:800;">{sol['suit_label']} ({sol['suit_score']:.1f}%)</span> &nbsp;|&nbsp;
+                <b>Confidence:</b> {sol['confidence']}
+            </p>
+        </div>
+        """
+    )
+    st.markdown(f"**Why Suggested for {w['watershed_id']}:** {sol['reason']}")
+    st.markdown(f"**Engineering Scope & Design:** {sol['eng_details']}")
+    st.markdown(
+        f"""
+        **Site Parameters Verified from Satellites:**
+        - **Catchment Area:** `{w['area_km2']} km²` | **Mean Slope:** `{w['slope_deg']}°` | **Stream Order:** `Order {w['stream_order']}`
+        - **Soil Texture & Group:** `{w['soil_texture']} (HSG-{w['hydrologic_soil_group']})` | **Groundwater Table:** `{w['gw_depth_mbgl']} m bgl ({w['cgwb_stage']})`
+        - **Estimated Harvestable Runoff Potential:** `{w['harvestable_runoff_mcm']} MCM/yr` (`≈ {w['harvestable_runoff_mcm']*1000:,.0f} Million Liters/yr`)
+        """
+    )
+    if st.button("📋 Proceed to Field Verification for This Site", key=f"sol_go_fv_{sol['title']}", use_container_width=True):
+        st.session_state["active_menu"] = "📋 Field Verification"
+        st.rerun()
+
+
+# ============================================================================
+# LEFT SIDEBAR: AQUAPRIOR LOGO & 6 FULL-WIDTH PILL MENU BUTTONS
 # ============================================================================
 with st.sidebar:
-    st.markdown(
+    _html(
         """
         <div style="display:flex; align-items:center; gap:12px; padding: 4px 4px 20px 4px; border-bottom: 1px solid rgba(255,255,255,0.12); margin-bottom: 14px;">
             <div style="width:40px; height:40px; border-radius:50%; background:linear-gradient(135deg,#38bdf8,#1d4ed8); display:flex; align-items:center; justify-content:center; font-size:1.35rem; box-shadow: 0 3px 10px rgba(56,189,248,0.4);">
@@ -420,8 +523,7 @@ with st.sidebar:
                 <div style="font-size:0.74rem; color:#93c5fd;">Watershed Decision System</div>
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
     menu_items = [
@@ -443,9 +545,9 @@ with st.sidebar:
             st.session_state["active_menu"] = menu_key
             st.rerun()
 
-    st.markdown("<hr style='border-color:rgba(255,255,255,0.12); margin:22px 0 14px 0;'/>", unsafe_allow_html=True)
-    st.markdown(
+    _html(
         """
+        <hr style="border-color:rgba(255,255,255,0.12); margin:22px 0 14px 0;"/>
         <div style="font-size:0.78rem; color:#94a3b8; line-height:1.55; padding: 0 6px;">
             <b style="color:#e2e8f0;">🛰️ Satellite Feeds (GEE)</b><br/>
             • SRTM 30m DEM & Slope<br/>
@@ -456,8 +558,7 @@ with st.sidebar:
             • OpenLandMap Soil Group<br/>
             • JRC Global Surface Water
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 selected_menu = st.session_state["active_menu"]
@@ -494,7 +595,7 @@ with top_c2:
     )
 
 with top_c3:
-    st.markdown(
+    _html(
         """
         <div style="display:flex; align-items:center; justify-content:flex-end; gap:12px; padding-top:4px;">
             <span style="font-size:0.84rem; color:#64748b;">Last updated: <b>30 Sep 2026</b></span>
@@ -502,8 +603,7 @@ with top_c3:
             <span style="font-size:1.15rem;" title="Notifications">🔔</span>
             <span style="width:32px; height:32px; border-radius:50%; background:#cbd5e1; display:inline-flex; align-items:center; justify-content:center; font-size:0.9rem;">👤</span>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 # Filter Dataset by Selected District & Search Query
@@ -542,7 +642,7 @@ def _render_four_kpi_cards(df_subset: pd.DataFrame) -> None:
             )
         )
 
-    st.markdown(
+    _html(
         f"""
         <div class="kpi-grid">
             <div class="kpi-card kpi-urgent">
@@ -574,54 +674,32 @@ def _render_four_kpi_cards(df_subset: pd.DataFrame) -> None:
                 </div>
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
-
-
-def _status_badge_html(pclass: str, wid: str = "") -> str:
-    if wid == "MW-024" or pclass == "Critical Priority":
-        return '<span class="pill-very-high">⚠️ Very High</span>'
-    if wid == "MW-017" or pclass == "High Priority":
-        return '<span class="pill-high">⚠️ High</span>'
-    if pclass == "Moderate Priority":
-        return '<span class="pill-monitor">🕒 Monitor</span>'
-    return '<span class="pill-stable">🌱 Stable</span>'
-
-
-def _conf_badge_html(conf_lvl: str) -> str:
-    if conf_lvl == "High":
-        return '<span class="pill-conf-high">🛡️ Confidence: High</span>'
-    return '<span class="pill-conf-med">🛡️ Confidence: Medium</span>'
 
 
 def _build_priority_folium_map(
     df_map: pd.DataFrame,
     color_col: str = "final_priority_score",
-    height_px: int = 460,
+    height_px: int = 480,
     highlight_wid: str | None = None,
     show_legend_box: bool = True,
 ) -> None:
-    """Builds and renders the interactive Folium map with watershed polygons, labels, and legend."""
+    """Builds and renders the interactive Folium map with auto-fit bounds, labels, and legend."""
     center_lat = float(df_map["lat"].mean())
     center_lon = float(df_map["lon"].mean())
-    zoom_lvl = 9 if len(df_map) < 20 else 7
-
-    if highlight_wid and highlight_wid in df_map["watershed_id"].values and len(df_map) == 1:
-        h_row = df_map[df_map["watershed_id"] == highlight_wid].iloc[0]
-        center_lat, center_lon = float(h_row["lat"]), float(h_row["lon"])
-        zoom_lvl = 11
+    zoom_lvl = 10 if len(df_map) <= 12 else (9 if len(df_map) <= 25 else 7)
 
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=zoom_lvl,
-        tiles="CartoDB positron",
+        tiles="https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}",
+        attr="Google Terrain Relief",
         control_scale=True,
     )
     folium.TileLayer(
-        tiles="https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}",
-        attr="Google Terrain",
-        name="Terrain Relief Map",
+        tiles="CartoDB positron",
+        name="Clean Light Basemap",
         overlay=False,
     ).add_to(m)
 
@@ -644,10 +722,16 @@ def _build_priority_folium_map(
         return palette[min(4, max(0, int(ratio * 4.99)))]
 
     features = []
+    all_lats: List[float] = []
+    all_lons: List[float] = []
+
     for feat in ws_geojson_all["features"]:
         wid = feat["properties"]["watershed_id"]
         if wid in lookup:
             r = lookup[wid]
+            for pt in feat["geometry"]["coordinates"][0]:
+                all_lons.append(float(pt[0]))
+                all_lats.append(float(pt[1]))
             features.append(
                 {
                     "type": "Feature",
@@ -668,14 +752,17 @@ def _build_priority_folium_map(
                 }
             )
 
+    if all_lats and all_lons and len(df_map) > 1:
+        m.fit_bounds([[min(all_lats), min(all_lons)], [max(all_lats), max(all_lons)]])
+
     folium.GeoJson(
         {"type": "FeatureCollection", "features": features},
         name="Watershed Priority Zones",
         style_function=lambda f: {
             "fillColor": f["properties"]["fill_color"],
             "color": "#ffffff",
-            "weight": 3.2 if f["properties"]["is_selected"] else 1.8,
-            "fillOpacity": 0.85 if f["properties"]["is_selected"] else 0.74,
+            "weight": 3.5 if f["properties"]["is_selected"] else 1.8,
+            "fillOpacity": 0.86 if f["properties"]["is_selected"] else 0.76,
         },
         tooltip=folium.GeoJsonTooltip(
             fields=[
@@ -701,33 +788,17 @@ def _build_priority_folium_map(
         ),
     ).add_to(m)
 
-    # Add clean white label badge on highlighted watershed (matching MW-024 in mockup!)
     if highlight_wid and highlight_wid in lookup:
         hr = lookup[highlight_wid]
         folium.Marker(
             location=[hr["lat"], hr["lon"]],
             icon=folium.DivIcon(
-                html=f"""
-                <div style="transform:translate(-38px,-18px); text-align:center;">
-                    <div style="font-weight:800; color:#ffffff; font-size:13px; text-shadow:0 1px 4px rgba(0,0,0,0.85); white-space:nowrap;">
-                        {hr['watershed_id']}
-                    </div>
-                    <div style="width:12px; height:12px; background:#ffffff; border:3px solid #dc2626; border-radius:50%; margin:2px auto 0 auto; box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>
-                </div>
-                """
+                html=f'<div style="transform:translate(-34px,-18px); text-align:center;"><div style="font-weight:800; color:#ffffff; font-size:13px; text-shadow:0 1px 4px rgba(0,0,0,0.9); white-space:nowrap;">{hr["watershed_id"]}</div><div style="width:12px; height:12px; background:#ffffff; border:3px solid #dc2626; border-radius:50%; margin:2px auto 0 auto; box-shadow:0 2px 6px rgba(0,0,0,0.45);"></div></div>'
             ),
         ).add_to(m)
 
-    # Bottom-left floating legend matching Explore Priority Map mockup
     if show_legend_box:
-        legend_html = """
-        <div style="position: fixed; bottom: 22px; left: 22px; z-index: 9999; background: rgba(255,255,255,0.95); padding: 12px 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); font-family: sans-serif; font-size: 13px; color: #0f172a; border: 1px solid #e2e8f0;">
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#dc2626; display:inline-block;"></span> <b>Very High</b></div>
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#f97316; display:inline-block;"></span> <b>High</b></div>
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#facc15; display:inline-block;"></span> <b>Monitor</b></div>
-            <div style="display:flex; align-items:center; gap:8px;"><span style="width:14px; height:14px; border-radius:50%; background:#22c55e; display:inline-block;"></span> <b>Stable</b></div>
-        </div>
-        """
+        legend_html = '<div style="position: fixed; bottom: 22px; left: 22px; z-index: 9999; background: rgba(255,255,255,0.96); padding: 12px 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); font-family: sans-serif; font-size: 13px; color: #0f172a; border: 1px solid #e2e8f0;"><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#dc2626; display:inline-block;"></span> <b>Very High</b></div><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#f97316; display:inline-block;"></span> <b>High</b></div><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#facc15; display:inline-block;"></span> <b>Monitor</b></div><div style="display:flex; align-items:center; gap:8px;"><span style="width:14px; height:14px; border-radius:50%; background:#22c55e; display:inline-block;"></span> <b>Stable</b></div></div>'
         m.get_root().html.add_child(folium.Element(legend_html))
 
     st_folium(m, width=None, height=height_px, returned_objects=[])
@@ -737,10 +808,9 @@ def _build_priority_folium_map(
 # SECTION 1: 🏠 HOME
 # ============================================================================
 if selected_menu == "🏠 Home":
-    st.markdown('<div class="page-title">District Water Resource Overview</div>', unsafe_allow_html=True)
-    st.markdown(
-        f'<div class="page-subtitle">Real-time satellite watershed status, deterioration trends, and priority queue for <b>{selected_district}</b></div>',
-        unsafe_allow_html=True,
+    _html('<div class="page-title">District Water Resource Overview</div>')
+    _html(
+        f'<div class="page-subtitle">Real-time satellite watershed status, deterioration trends, and priority queue for <b>{selected_district}</b></div>'
     )
 
     _render_four_kpi_cards(df_dist)
@@ -748,17 +818,16 @@ if selected_menu == "🏠 Home":
     col_h1, col_h2 = st.columns([1.45, 1.0], gap="medium")
 
     with col_h1:
-        st.markdown('<div class="ap-card"><h4 style="margin-top:0; color:#0b2239;">🗺️ District Micro-Watershed Priority Map</h4>', unsafe_allow_html=True)
+        _html('<div class="ap-card"><h4 style="margin-top:0; color:#0b2239;">🗺️ District Micro-Watershed Priority Map</h4>')
         _build_priority_folium_map(
             df_dist,
             color_col="final_priority_score",
             height_px=410,
             highlight_wid=st.session_state["selected_ws_id"],
         )
-        st.markdown("</div>", unsafe_allow_html=True)
+        _html("</div>")
 
-        # Deterioration Trend Chart
-        st.markdown('<div class="ap-card"><h4 style="margin-top:0; color:#0b2239;">📉 5-Year Surface-Water & Vegetation Deterioration Trend</h4>', unsafe_allow_html=True)
+        _html('<div class="ap-card"><h4 style="margin-top:0; color:#0b2239;">📉 5-Year Surface-Water & Vegetation Deterioration Trend</h4>')
         trend_df = df_dist.sort_values("final_priority_score", ascending=False).head(10)
         fig_tr = go.Figure()
         fig_tr.add_trace(
@@ -786,7 +855,7 @@ if selected_menu == "🏠 Home":
             legend=dict(orientation="h", y=1.15),
         )
         st.plotly_chart(fig_tr, use_container_width=True, config={"displayModeBar": False})
-        st.markdown("</div>", unsafe_allow_html=True)
+        _html("</div>")
 
     with col_h2:
         sel_id = st.session_state["selected_ws_id"]
@@ -794,7 +863,7 @@ if selected_menu == "🏠 Home":
             sel_id = df_dist.sort_values("final_priority_score", ascending=False).iloc[0]["watershed_id"]
         w_row = df_all[df_all["watershed_id"] == sel_id].iloc[0]
 
-        st.markdown(
+        _html(
             f"""
             <div class="ap-card">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -811,41 +880,29 @@ if selected_menu == "🏠 Home":
                 </div>
                 <div>{_conf_badge_html(w_row['confidence_level'])} &nbsp; <span style="font-size:0.82rem; color:#64748b;">Field Check: <b>{st.session_state['verification_records'].get(w_row['watershed_id'], 'Pending')}</b></span></div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
-        bcol1, bcol2 = st.columns(2)
-        if bcol1.button("💡 View Possible Solutions", use_container_width=True):
+        bcol1, bcol2, bcol3 = st.columns(3)
+        if bcol1.button("🔍 Full Summary", use_container_width=True):
+            open_watershed_summary_dialog(w_row["watershed_id"])
+        if bcol2.button("💡 Solutions", use_container_width=True):
             st.session_state["active_menu"] = "💡 Possible Solutions"
             st.rerun()
-        if bcol2.button("📋 Start Field Verification", use_container_width=True):
+        if bcol3.button("📋 Verify Site", use_container_width=True):
             st.session_state["active_menu"] = "📋 Field Verification"
             st.rerun()
 
-        st.markdown('<div class="ap-card"><h4 style="margin-top:0; color:#0b2239;">🚨 Ranked Priority List</h4>', unsafe_allow_html=True)
-        q_df = df_dist.sort_values("final_priority_score", ascending=False).head(6)
-        rows_html = ""
+        _html('<div class="ap-card"><h4 style="margin-top:0; margin-bottom:10px; color:#0b2239;">🚨 Ranked Priority List</h4>')
+        q_df = df_dist.sort_values("final_priority_score", ascending=False).head(5)
         for i, (_, r) in enumerate(q_df.iterrows(), 1):
-            rows_html += f"""
-            <tr>
-                <td><b>{i}</b></td>
-                <td><b>{r['watershed_id']}</b></td>
-                <td>{r['block_name']}</td>
-                <td>{_status_badge_html(r['priority_class'], r['watershed_id'])}</td>
-                <td style="font-size:0.83rem;">{r['plain_reason']}</td>
-            </tr>
-            """
-        st.markdown(
-            f"""
-            <table class="ap-table">
-                <thead><tr><th>#</th><th>ID</th><th>Block</th><th>Status</th><th>Reason</th></tr></thead>
-                <tbody>{rows_html}</tbody>
-            </table>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+            rc1, rc2, rc3 = st.columns([1.8, 1.1, 1.1])
+            rc1.markdown(f"**{i}. {r['watershed_id']}** ({r['block_name']})")
+            rc2.markdown(_status_badge_html(r["priority_class"], r["watershed_id"]), unsafe_allow_html=True)
+            if rc3.button("View Summary ❯", key=f"home_vs_{r['watershed_id']}", use_container_width=True):
+                st.session_state["selected_ws_id"] = r["watershed_id"]
+                open_watershed_summary_dialog(r["watershed_id"])
+        _html("</div>")
 
 
 # ============================================================================
@@ -853,13 +910,9 @@ if selected_menu == "🏠 Home":
 # ============================================================================
 elif selected_menu == "🗺️ Explore Map":
     dist_short = selected_district.replace(" District", "").split(" (")[0]
-    st.markdown('<div class="page-title">Explore Priority Map</div>', unsafe_allow_html=True)
-    st.markdown(
-        f'<div class="page-subtitle">📍 Tamil Nadu &nbsp;❯&nbsp; <b>{dist_short}</b></div>',
-        unsafe_allow_html=True,
-    )
+    _html('<div class="page-title">Explore Priority Map</div>')
+    _html(f'<div class="page-subtitle">📍 Tamil Nadu &nbsp;❯&nbsp; <b>{dist_short}</b></div>')
 
-    # 5 Problem Filter Pills Row matching the screenshot
     pf_cols = st.columns(5, gap="small")
     problem_pills = [
         ("All Problems", "⊞  All Problems"),
@@ -887,7 +940,7 @@ elif selected_menu == "🗺️ Explore Map":
     mcol1, mcol2 = st.columns([1.85, 1.0], gap="medium")
 
     with mcol1:
-        st.markdown('<div class="ap-card" style="padding:12px;">', unsafe_allow_html=True)
+        _html('<div class="ap-card" style="padding:12px;">')
         picked_wid = st.session_state["selected_ws_id"]
         if picked_wid not in df_map_filtered["watershed_id"].values:
             picked_wid = df_map_filtered.sort_values("final_priority_score", ascending=False).iloc[0]["watershed_id"]
@@ -900,10 +953,9 @@ elif selected_menu == "🗺️ Explore Map":
             highlight_wid=picked_wid,
             show_legend_box=True,
         )
-        st.markdown("</div>", unsafe_allow_html=True)
+        _html("</div>")
 
     with mcol2:
-        # Watershed Selector at top of right card so user can switch MW-024 or any unit
         ws_pick_list = [
             f"{r['watershed_id']} — {r['block_name']}" for _, r in df_map_filtered.iterrows()
         ]
@@ -922,14 +974,12 @@ elif selected_menu == "🗺️ Explore Map":
         st.session_state["selected_ws_id"] = picked_wid
         prow = df_all[df_all["watershed_id"] == picked_wid].iloc[0]
 
-        # Right Preview Card matching the exact Explore Priority Map screenshot!
-        st.markdown(
+        _html(
             f"""
             <div class="ap-card" style="padding: 24px;">
                 <div style="font-size:2.0rem; font-weight:800; color:#0b2239; margin-bottom:14px;">
                     {prow['watershed_id']}
                 </div>
-
                 <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:14px; padding:16px 18px; display:flex; align-items:center; gap:14px; margin-bottom:16px;">
                     <div style="width:46px; height:46px; border-radius:50%; background:#dc2626; color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:1.35rem; flex-shrink:0;">
                         ⚠️
@@ -939,69 +989,46 @@ elif selected_menu == "🗺️ Explore Map":
                         <div style="font-size:0.92rem; color:#b91c1c; font-weight:500;">{prow['trend_class']}</div>
                     </div>
                 </div>
-
                 <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid #f1f5f9;">
                     {_conf_badge_html(prow['confidence_level'])}
                     <span style="font-size:0.84rem; color:#475569;">📅 Last updated: <b>30 Sep 2026</b></span>
                 </div>
-
                 <div style="font-size:1.12rem; font-weight:800; color:#0b2239; margin-bottom:16px;">
                     Why it needs attention
                 </div>
-
                 <div class="driver-item">
                     <div class="driver-circle" style="background:#e0f2fe; color:#0284c7;">💧</div>
                     <div>Surface water decreased (-{prow['water_10yr_decline_pct']:.0f}%)</div>
                 </div>
-
                 <div class="driver-item">
                     <div class="driver-circle" style="background:#dcfce7; color:#15803d;">🌱</div>
                     <div>Vegetation is declining (NDVI {prow['ndvi_5yr_trend']:+.2f})</div>
                 </div>
-
-                <div class="driver-item" style="margin-bottom:22px;">
+                <div class="driver-item" style="margin-bottom:10px;">
                     <div class="driver-circle" style="background:#fee2e2; color:#dc2626;">🏢</div>
                     <div>Built-up area increased (+{prow['builtup_5yr_growth_pct']:.0f}%)</div>
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
-        if st.button("📄  View Full Details     ❯", use_container_width=True):
-            st.session_state["active_menu"] = "💡 Possible Solutions"
-            st.rerun()
-
-        with st.expander("🛰️ View All 8 Satellite Parameters & SHAP Impact"):
-            st.markdown(
-                f"""
-                • **1. SRTM DEM & Slope:** {prow['dem_elevation_m']} m | {prow['slope_deg']}°  
-                • **2. Drainage Density:** {prow['drainage_density_km_km2']} km/km² (Order {prow['stream_order']})  
-                • **3. CHIRPS Rainfall:** {prow['rainfall_annual_mm']:.0f} mm ({prow['rainfall_anomaly_pct']:+.1f}% anomaly)  
-                • **4. Sentinel-2 NDVI:** {prow['ndvi_mean']:.2f} ({prow['ndvi_5yr_trend']:+.3f} 5-yr trend)  
-                • **5. Dynamic World LULC:** {prow['dominant_lulc']} (+{prow['builtup_5yr_growth_pct']}% urban growth)  
-                • **6. Soil Infiltration:** {prow['soil_texture']} (HSG-{prow['hydrologic_soil_group']}, Score {prow['soil_infiltration_score']})  
-                • **7. JRC Water Occurrence:** {prow['water_occurrence_pct']}% (-{prow['water_10yr_decline_pct']}% 10-yr decline)
-                """
-            )
+        if st.button("📄  View Full Details     ❯", key="exp_view_full", use_container_width=True):
+            open_watershed_summary_dialog(picked_wid)
 
 
 # ============================================================================
-# SECTION 3: ⚠️ PRIORITY AREAS (Matches Screenshot 1 Exactly!)
+# SECTION 3: ⚠️ PRIORITY AREAS (Interactive Rows with Working View Summary!)
 # ============================================================================
 elif selected_menu == "⚠️ Priority Areas":
-    st.markdown('<div class="page-title">Priority Areas</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="page-subtitle">Review watersheds that need attention first</div>',
-        unsafe_allow_html=True,
-    )
+    _html('<div class="page-title">Priority Areas</div>')
+    _html('<div class="page-subtitle">Review watersheds that need attention first</div>')
 
     _render_four_kpi_cards(df_dist)
 
     col_pa_left, col_pa_right = st.columns([2.35, 1.0], gap="medium")
 
     with col_pa_left:
-        st.markdown('<div class="ap-card">', unsafe_allow_html=True)
+        _html('<div class="ap-card">')
         sc1, sc2, sc3 = st.columns([1.6, 1.0, 1.0])
         with sc1:
             pa_search = st.text_input(
@@ -1055,69 +1082,53 @@ elif selected_menu == "⚠️ Priority Areas":
             else:
                 df_queue = df_queue.sort_values("final_priority_score", ascending=False)
 
-        table_rows_html = ""
-        for idx_num, (_, row) in enumerate(df_queue.head(12).iterrows(), 1):
-            num_bg = "#fee2e2" if idx_num <= 2 else ("#fef3c7" if idx_num <= 4 else "#dcfce7")
-            num_col = "#b91c1c" if idx_num <= 2 else ("#b45309" if idx_num <= 4 else "#15803d")
-            table_rows_html += f"""
-            <tr>
-                <td>
-                    <span style="width:28px; height:28px; border-radius:50%; background:{num_bg}; color:{num_col}; display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:0.85rem;">
-                        {idx_num}
-                    </span>
-                </td>
-                <td style="font-weight:800; color:#0b2239; font-size:0.96rem;">{row['watershed_id']}</td>
-                <td style="color:#334155; font-weight:500;">{row['block_name']}</td>
-                <td>{_status_badge_html(row['priority_class'], row['watershed_id'])}</td>
-                <td style="color:#334155; max-width:260px;">{row['plain_reason']}</td>
-                <td>{_conf_badge_html(row['confidence_level'])}</td>
-                <td><span class="btn-view-summary">View Summary &nbsp;❯</span></td>
-            </tr>
+        # Table Column Headers
+        _html(
             """
-
-        st.markdown(
-            f"""
-            <table class="ap-table">
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>Watershed ID</th>
-                        <th>Block Name</th>
-                        <th>Status</th>
-                        <th>Reason</th>
-                        <th>Confidence</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {table_rows_html}
-                </tbody>
-            </table>
-            """,
-            unsafe_allow_html=True,
+            <div style="display:grid; grid-template-columns: 0.45fr 1.05fr 1.25fr 1.05fr 2.1fr 1.25fr 1.25fr; background:#f8fafc; padding:10px 12px; border-radius:8px; font-weight:700; color:#475569; font-size:0.86rem; border-bottom:2px solid #e2e8f0; margin-bottom:8px;">
+                <div>#</div>
+                <div>Watershed ID</div>
+                <div>Block Name</div>
+                <div>Status</div>
+                <div>Reason</div>
+                <div>Confidence</div>
+                <div>Action</div>
+            </div>
+            """
         )
 
-        st.markdown("<div style='margin-top:14px;'></div>", unsafe_allow_html=True)
-        act_c1, act_c2, act_c3 = st.columns([1.6, 1.0, 1.0])
-        with act_c1:
-            chosen_act_wid = st.selectbox(
-                "Select Watershed from Queue for Action:",
-                [f"{r['watershed_id']} ({r['block_name']})" for _, r in df_queue.iterrows()],
-                label_visibility="collapsed",
-            )
-            st.session_state["selected_ws_id"] = chosen_act_wid.split(" (")[0]
-        with act_c2:
-            if st.button("💡 View Possible Solutions ❯", use_container_width=True):
-                st.session_state["active_menu"] = "💡 Possible Solutions"
-                st.rerun()
-        with act_c3:
-            if st.button("📋 Verify in Field ❯", use_container_width=True):
-                st.session_state["active_menu"] = "📋 Field Verification"
-                st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
+        # Render Interactive Rows with REAL Backend-Connected "View Summary >" Buttons!
+        for idx_num, (_, row) in enumerate(df_queue.head(10).iterrows(), 1):
+            num_bg = "#fee2e2" if idx_num <= 2 else ("#fef3c7" if idx_num <= 4 else "#dcfce7")
+            num_col = "#b91c1c" if idx_num <= 2 else ("#b45309" if idx_num <= 4 else "#15803d")
+            wid = row["watershed_id"]
+
+            r_cols = st.columns([0.45, 1.05, 1.25, 1.05, 2.1, 1.25, 1.25], vertical_alignment="center")
+            with r_cols[0]:
+                _html(
+                    f'<span style="width:28px; height:28px; border-radius:50%; background:{num_bg}; color:{num_col}; display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:0.85rem;">{idx_num}</span>'
+                )
+            with r_cols[1]:
+                _html(f'<span style="font-weight:800; color:#0b2239; font-size:0.96rem;">{wid}</span>')
+            with r_cols[2]:
+                _html(f'<span style="color:#334155; font-weight:500; font-size:0.92rem;">{row["block_name"]}</span>')
+            with r_cols[3]:
+                _html(_status_badge_html(row["priority_class"], wid))
+            with r_cols[4]:
+                _html(f'<span style="color:#334155; font-size:0.9rem;">{row["plain_reason"]}</span>')
+            with r_cols[5]:
+                _html(_conf_badge_html(row["confidence_level"]))
+            with r_cols[6]:
+                if st.button("View Summary ❯", key=f"pa_vs_{wid}", use_container_width=True):
+                    st.session_state["selected_ws_id"] = wid
+                    open_watershed_summary_dialog(wid)
+
+            _html('<hr style="border:none; border-top:1px solid #f1f5f9; margin:4px 0 8px 0;"/>')
+
+        _html("</div>")
 
     with col_pa_right:
-        st.markdown(
+        _html(
             """
             <div class="ap-card">
                 <h4 style="margin-top:0; margin-bottom:14px; color:#0b2239; font-size:1.15rem;">What should I review first?</h4>
@@ -1149,29 +1160,24 @@ elif selected_menu == "⚠️ Priority Areas":
                     </div>
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
 
 # ============================================================================
-# SECTION 4: 💡 POSSIBLE SOLUTIONS (Matches Screenshot 4 Exactly!)
+# SECTION 4: 💡 POSSIBLE SOLUTIONS (With Working "View Details >" Buttons!)
 # ============================================================================
 elif selected_menu == "💡 Possible Solutions":
-    st.markdown('<div class="page-title">Possible Solutions</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="page-subtitle">Suggested options for investigation</div>',
-        unsafe_allow_html=True,
-    )
+    _html('<div class="page-title">Possible Solutions</div>')
+    _html('<div class="page-subtitle">Suggested options for investigation</div>')
 
-    st.markdown(
+    _html(
         """
         <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:12px 18px; margin-bottom:16px; display:flex; align-items:center; gap:12px; color:#1e3a8a; font-weight:600; font-size:0.93rem;">
             <span style="background:#1d4ed8; color:#fff; width:24px; height:24px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:0.82rem;">i</span>
             These are screening suggestions. Field and engineering checks are required before implementation.
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
     sol_top1, sol_top2 = st.columns([1.1, 2.4])
@@ -1313,7 +1319,7 @@ elif selected_menu == "💡 Possible Solutions":
 
                 conf_html = _conf_badge_html(sol["confidence"])
 
-                st.markdown(
+                _html(
                     f"""
                     <div class="sol-card">
                         <div style="display:flex; gap:16px; align-items:flex-start;">
@@ -1331,24 +1337,22 @@ elif selected_menu == "💡 Possible Solutions":
                                 <div style="margin-bottom:8px;">{conf_html}</div>
                             </div>
                         </div>
-                        <div style="font-size:0.86rem; color:#475569; margin:10px 0 12px 0;">
+                        <div style="font-size:0.86rem; color:#475569; margin:10px 0 8px 0;">
                             {sol['reason']}
                         </div>
-                        <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #f1f5f9; padding-top:10px;">
+                        <div style="border-top:1px solid #f1f5f9; padding-top:8px; margin-bottom:4px;">
                             <span style="background:#fef2f2; color:#b91c1c; padding:4px 10px; border-radius:8px; font-size:0.78rem; font-weight:600;">
                                 📋 Field check required
                             </span>
-                            <span class="btn-view-summary">View Details &nbsp;❯</span>
                         </div>
                     </div>
-                    """,
-                    unsafe_allow_html=True,
+                    """
                 )
-                with st.expander(f"📐 Engineering Specs: {sol['title']}"):
-                    st.write(sol["eng_details"])
+                if st.button(f"View Details: {sol['title']} ❯", key=f"sol_btn_{idx_s}", use_container_width=True):
+                    open_solution_details_dialog(sol, s_row)
 
     with col_sol_right:
-        st.markdown(
+        _html(
             """
             <div class="ap-card">
                 <h4 style="margin-top:0; margin-bottom:16px; color:#0b2239; font-size:1.15rem;">Before taking action</h4>
@@ -1380,32 +1384,27 @@ elif selected_menu == "💡 Possible Solutions":
                     </div>
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
 
 # ============================================================================
-# SECTION 5: 📋 FIELD VERIFICATION (Matches Screenshot 2 Exactly!)
+# SECTION 5: 📋 FIELD VERIFICATION
 # ============================================================================
 elif selected_menu == "📋 Field Verification":
     fv_top1, fv_top2 = st.columns([2.2, 1.0])
     with fv_top1:
-        st.markdown('<div class="page-title">Field Verification</div>', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="page-subtitle">Record site observations and confirm system findings</div>',
-            unsafe_allow_html=True,
-        )
+        _html('<div class="page-title">Field Verification</div>')
+        _html('<div class="page-subtitle">Record site observations and confirm system findings</div>')
     with fv_top2:
-        st.markdown(
+        _html(
             """
             <div style="display:flex; justify-content:flex-end; padding-top:8px;">
                 <span style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; padding:8px 16px; border-radius:999px; font-weight:700; font-size:0.86rem;">
                     ☁️ Offline mode available &nbsp; | &nbsp; 🔄
                 </span>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
     fv_wid = st.session_state["selected_ws_id"]
@@ -1418,14 +1417,9 @@ elif selected_menu == "📋 Field Verification":
         active = idx_s <= stage_idx
         bg = "#1565c0" if active else "#cbd5e1"
         col = "#0b2239" if active else "#64748b"
-        return f"""
-        <div class="step-item">
-            <div class="step-circle" style="background:{bg}; color:#ffffff;">{idx_s + 1}</div>
-            <div style="color:{col};">{label}</div>
-        </div>
-        """
+        return f'<div class="step-item"><div class="step-circle" style="background:{bg}; color:#ffffff;">{idx_s + 1}</div><div style="color:{col};">{label}</div></div>'
 
-    st.markdown(
+    _html(
         f"""
         <div class="stepper-wrap">
             {_step_node(0, "Pending")}
@@ -1436,14 +1430,13 @@ elif selected_menu == "📋 Field Verification":
             <div class="step-line" style="background:{'#1565c0' if stage_idx >= 3 else '#cbd5e1'};"></div>
             {_step_node(3, "Completed")}
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
     col_fv_left, col_fv_right = st.columns([1.85, 1.0], gap="medium")
 
     with col_fv_left:
-        st.markdown('<div class="ap-card">', unsafe_allow_html=True)
+        _html('<div class="ap-card">')
         fv_select_list = [
             f"Inspection: {r['watershed_id']} — {r['block_name']}" for _, r in df_all.iterrows()
         ]
@@ -1457,7 +1450,7 @@ elif selected_menu == "📋 Field Verification":
         st.session_state["selected_ws_id"] = fv_wid
         fv_row = df_all[df_all["watershed_id"] == fv_wid].iloc[0]
 
-        st.markdown(
+        _html(
             f"""
             <div style="display:flex; gap:16px; align-items:center; margin-bottom:16px;">
                 <div style="width:95px; height:68px; border-radius:10px; background:linear-gradient(180deg,#bae6fd 0%,#86efac 60%,#38bdf8 100%); display:flex; align-items:center; justify-content:center; font-size:2.2rem; border:1px solid #cbd5e1;">
@@ -1468,8 +1461,7 @@ elif selected_menu == "📋 Field Verification":
                     <div style="color:#1565c0; font-weight:600; font-size:0.95rem;">📍 {fv_row['block_name']} • {fv_row['district']}</div>
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
         fc1, fc2 = st.columns(2)
@@ -1519,18 +1511,17 @@ elif selected_menu == "📋 Field Verification":
             st.success(f"Confirmed findings for {fv_wid} ({fv_row['block_name']})! Status advanced to Verified.")
             st.rerun()
 
-        st.markdown("</div>", unsafe_allow_html=True)
+        _html("</div>")
 
     with col_fv_right:
-        st.markdown(
-            f"""
+        _html(
+            """
             <div class="ap-card">
                 <h4 style="margin-top:0; color:#0b2239;">Watershed Summary</h4>
                 <div style="margin-bottom:10px;">
                     <span class="pill-very-high">❗ Urgent Attention</span>
                 </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
         _build_priority_folium_map(
             df_all[df_all["watershed_id"] == fv_wid],
@@ -1539,9 +1530,9 @@ elif selected_menu == "📋 Field Verification":
             highlight_wid=fv_wid,
             show_legend_box=False,
         )
-        st.markdown("</div>", unsafe_allow_html=True)
+        _html("</div>")
 
-        st.markdown(
+        _html(
             f"""
             <div class="ap-card">
                 <h4 style="margin-top:0; color:#0b2239;">Suggested option</h4>
@@ -1555,31 +1546,27 @@ elif selected_menu == "📋 Field Verification":
                     </div>
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
-        st.markdown('<div class="ap-card"><h4 style="margin-top:0; color:#0b2239;">Verification checklist</h4>', unsafe_allow_html=True)
+        _html('<div class="ap-card"><h4 style="margin-top:0; color:#0b2239;">Verification checklist</h4>')
         st.checkbox("Location confirmed", value=True, key="chk_loc")
         st.checkbox("Photographs added", value=bool(uploaded_photos), key="chk_photo")
         st.checkbox("Land condition checked", value=land_avail, key="chk_land")
-        st.markdown("</div>", unsafe_allow_html=True)
+        _html("</div>")
 
 
 # ============================================================================
-# SECTION 6: 📄 REPORTS (Matches Screenshot 3 Exactly!)
+# SECTION 6: 📄 REPORTS
 # ============================================================================
 elif selected_menu == "📄 Reports":
-    st.markdown('<div class="page-title">Reports</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="page-subtitle">Create clear summaries for review and decision-making</div>',
-        unsafe_allow_html=True,
-    )
+    _html('<div class="page-title">Reports</div>')
+    _html('<div class="page-subtitle">Create clear summaries for review and decision-making</div>')
 
     col_rep_left, col_rep_right = st.columns([1.75, 1.05], gap="medium")
 
     with col_rep_left:
-        st.markdown(
+        _html(
             """
             <div class="ap-card">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
@@ -1590,8 +1577,7 @@ elif selected_menu == "📄 Reports":
                         <span style="border:1px solid #cbd5e1; background:#fff; color:#334155; padding:4px 12px; border-radius:8px; font-weight:700; font-size:0.82rem;">🟣 GIS</span>
                     </div>
                 </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
         report_type = st.selectbox(
@@ -1620,15 +1606,16 @@ elif selected_menu == "📄 Reports":
             )
             st.success(f"Generated report: **{new_title}**! Ready for download below.")
 
-        st.markdown("</div>", unsafe_allow_html=True)
+        _html("</div>")
 
-        st.markdown('<div class="ap-card"><h4 style="margin-top:0; color:#0b2239; font-size:1.15rem;">Recent Reports</h4>', unsafe_allow_html=True)
+        _html('<div class="ap-card"><h4 style="margin-top:0; color:#0b2239; font-size:1.15rem;">Recent Reports</h4>')
         for idx_r, rep in enumerate(st.session_state["generated_reports"][:5]):
             icon_f = "📕" if rep["fmt"] == "PDF" else ("📗" if rep["fmt"] == "CSV" else "🟣")
-            r_c1, r_c2, r_c3, r_c4, r_c5 = st.columns([2.2, 0.9, 0.8, 1.0, 0.8])
+            r_c1, r_c2, r_c3, r_c4, r_c5 = st.columns([2.2, 0.9, 0.8, 1.0, 0.8], vertical_alignment="center")
             r_c1.markdown(f"**{icon_f} {rep['name']}**")
             r_c2.caption(rep["date"])
-            r_c3.markdown('<span class="pill-stable">✔ Ready</span>', unsafe_allow_html=True)
+            with r_c3:
+                _html('<span class="pill-stable">✔ Ready</span>')
             csv_data = df_dist.to_csv(index=False).encode("utf-8")
             r_c4.download_button(
                 "⬇ Download",
@@ -1637,9 +1624,10 @@ elif selected_menu == "📄 Reports":
                 mime="text/csv",
                 key=f"dl_rep_{idx_r}",
             )
-            r_c5.button("🔗 Share", key=f"sh_rep_{idx_r}")
+            if r_c5.button("🔗 Share", key=f"sh_rep_{idx_r}"):
+                st.toast(f"Copied shareable link for {rep['name']}!")
 
-        st.markdown("<hr style='border-color:#f1f5f9;'/>", unsafe_allow_html=True)
+        _html("<hr style='border-color:#f1f5f9;'/>")
         dl_c1, dl_c2 = st.columns(2)
         dl_c1.download_button(
             "📗 Export Full Priority Table (CSV)",
@@ -1655,7 +1643,7 @@ elif selected_menu == "📄 Reports":
             mime="application/geo+json",
             use_container_width=True,
         )
-        st.markdown("</div>", unsafe_allow_html=True)
+        _html("</div>")
 
         with st.expander("🤖 Scientific Model Validation & Google Earth Engine Code (For Judges)"):
             st.markdown("##### Supervised Deterioration Model Comparison (95% Bootstrapped CIs)")
@@ -1670,7 +1658,7 @@ elif selected_menu == "📄 Reports":
         prev_row = df_all[df_all["watershed_id"] == prev_wid].iloc[0]
         v_stat = st.session_state["verification_records"].get(prev_wid, "Pending")
 
-        st.markdown(
+        _html(
             f"""
             <div class="ap-card">
                 <h4 style="margin-top:0; color:#0b2239; font-size:1.18rem;">Report Preview</h4>
@@ -1682,8 +1670,7 @@ elif selected_menu == "📄 Reports":
                     <span class="pill-very-high">❗ Urgent Attention</span>
                 </div>
                 <div style="color:#1565c0; font-weight:600; font-size:0.9rem; margin-bottom:10px;">📍 {prev_row['block_name']}</div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
         _build_priority_folium_map(
             df_all[df_all["watershed_id"] == prev_wid],
@@ -1692,7 +1679,7 @@ elif selected_menu == "📄 Reports":
             highlight_wid=prev_wid,
             show_legend_box=False,
         )
-        st.markdown(
+        _html(
             f"""
                 <div style="font-weight:800; color:#0b2239; margin:12px 0 8px 0;">Main drivers</div>
                 <div style="background:#eff6ff; color:#1e3a8a; padding:10px 14px; border-radius:10px; margin-bottom:8px; font-weight:600; font-size:0.88rem;">
@@ -1708,6 +1695,5 @@ elif selected_menu == "📄 Reports":
                     📋 Field verification: {v_stat}
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
