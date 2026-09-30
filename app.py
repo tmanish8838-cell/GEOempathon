@@ -195,6 +195,29 @@ st.markdown(
         border-radius: 8px; font-weight: 600; font-size: 0.82rem; text-decoration: none; display: inline-block;
     }
 
+    /* High-Contrast Visible Action Buttons Across Main Content */
+    .stButton > button, .stDownloadButton > button {
+        background-color: #1565c0 !important;
+        color: #ffffff !important;
+        border: 1px solid #1d4ed8 !important;
+        border-radius: 10px !important;
+        padding: 0.55rem 1.1rem !important;
+        font-weight: 700 !important;
+        font-size: 0.92rem !important;
+        box-shadow: 0 3px 8px rgba(21, 101, 192, 0.22) !important;
+        transition: all 0.15s ease !important;
+    }
+    .stButton > button:hover, .stDownloadButton > button:hover {
+        background-color: #1e40af !important;
+        border-color: #1e3a8a !important;
+        color: #ffffff !important;
+        box-shadow: 0 5px 12px rgba(21, 101, 192, 0.35) !important;
+    }
+    .stButton > button p, .stDownloadButton > button p {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+    }
+
     /* Priority Areas Table */
     .ap-table {
         width: 100%;
@@ -686,13 +709,13 @@ if selected_menu == "🏠 Home":
         )
         fig_tr.update_layout(
             barmode="group",
-            height=260,
-            margin=dict(l=10, r=10, t=15, b=30),
+            height=280,
+            margin=dict(l=15, r=15, t=35, b=35),
             paper_bgcolor="#ffffff",
             plot_bgcolor="#ffffff",
-            legend=dict(orientation="h", y=1.12),
+            legend=dict(orientation="h", y=1.15),
         )
-        st.plotly_chart(fig_tr, use_container_width=True)
+        st.plotly_chart(fig_tr, use_container_width=True, config={"displayModeBar": False})
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col_h2:
@@ -861,6 +884,11 @@ elif selected_menu == "🗺️ Explore Map":
             """,
             unsafe_allow_html=True,
         )
+
+        st.markdown(
+            f'<div class="ap-card"><h4 style="margin:0 0 8px 0; color:#0b2239; font-size:1.05rem;">📊 Why is {picked_wid} Prioritized? (SHAP-Style Drivers)</h4>',
+            unsafe_allow_html=True,
+        )
         attr_df = compute_local_feature_attributions(prow, df_all)
         fig_local = px.bar(
             attr_df,
@@ -869,17 +897,29 @@ elif selected_menu == "🗺️ Explore Map":
             orientation="h",
             color="Direction",
             color_discrete_map={"Increases Priority (+)": "#ef4444", "Reduces Priority (-)": "#22c55e"},
-            height=240,
-            title=f"Why is {picked_wid} Prioritized? (SHAP-Style Drivers)",
+            text="Priority Impact (pts)",
+            height=310,
         )
+        fig_local.update_traces(textposition="outside", cliponaxis=False)
         fig_local.update_layout(
-            margin=dict(l=5, r=5, t=30, b=5),
+            margin=dict(l=10, r=40, t=10, b=25),
             showlegend=False,
             yaxis_title="",
+            xaxis_title="Priority Impact (pts)",
             paper_bgcolor="#ffffff",
             plot_bgcolor="#ffffff",
         )
-        st.plotly_chart(fig_local, use_container_width=True)
+        st.plotly_chart(fig_local, use_container_width=True, config={"displayModeBar": False})
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Visible Action Buttons at the bottom of the right panel
+        em_b1, em_b2 = st.columns(2)
+        if em_b1.button(f"💡 Solutions for {picked_wid}", use_container_width=True):
+            st.session_state["active_menu"] = "💡 Possible Solutions"
+            st.rerun()
+        if em_b2.button(f"📋 Verify {picked_wid}", use_container_width=True):
+            st.session_state["active_menu"] = "📋 Field Verification"
+            st.rerun()
 
 
 # ============================================================================
