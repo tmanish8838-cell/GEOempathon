@@ -740,6 +740,7 @@ def compute_priority_and_suitability_scores(
     primary_interventions: List[str] = []
     secondary_interventions: List[str] = []
     best_suit_scores: List[float] = []
+    second_suit_scores: List[float] = []
     explain_narratives: List[str] = []
     harvestable_mcm: List[float] = []
 
@@ -752,6 +753,7 @@ def compute_priority_and_suitability_scores(
         primary_interventions.append(ranked_suits[0][0])
         secondary_interventions.append(ranked_suits[1][0])
         best_suit_scores.append(round(ranked_suits[0][1], 1))
+        second_suit_scores.append(round(ranked_suits[1][1], 1))
 
         # Build local SHAP-style top driver explanation string
         driver_candidates = [
@@ -776,6 +778,7 @@ def compute_priority_and_suitability_scores(
     out["primary_intervention"] = primary_interventions
     out["secondary_intervention"] = secondary_interventions
     out["primary_suitability_score"] = best_suit_scores
+    out["secondary_suitability_score"] = second_suit_scores
     out["top_stress_drivers"] = explain_narratives
     out["harvestable_runoff_mcm"] = harvestable_mcm
 

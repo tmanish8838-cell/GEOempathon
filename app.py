@@ -464,7 +464,7 @@ def open_watershed_summary_dialog(wid: str) -> None:
                         {w['watershed_id']} — {w['name']}
                     </h3>
                     <div style="font-size:0.88rem; color:#cbd5e1;">
-                        Catchment Area: <b>{w['area_km2']} km²</b> &nbsp;•&nbsp; GPS: <b>{w['lat']:.4f}°N, {w['lon']:.4f}°E</b> &nbsp;•&nbsp; Hydro-Cluster: <b>{w['cluster_name']}</b>
+                        Catchment Area: <b>{w['area_km2']} km²</b> &nbsp;•&nbsp; GPS: <b>{w['lat']:.4f}°N, {w['lon']:.4f}°E</b> &nbsp;•&nbsp; Hydro-Cluster: <b>{w.get('hydro_archetype', 'Peri-Urban Tank Catchment')}</b>
                     </div>
                 </div>
                 <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
