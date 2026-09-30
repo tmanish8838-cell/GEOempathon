@@ -594,7 +594,16 @@ def open_watershed_summary_dialog(wid: str) -> None:
                 paper_bgcolor="#ffffff",
                 plot_bgcolor="#ffffff",
             )
-            st.plotly_chart(fig_d, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(
+                fig_d,
+                use_container_width=True,
+                config={
+                    "displayModeBar": True,
+                    "scrollZoom": True,
+                    "displaylogo": False,
+                    "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+                },
+            )
 
     with tab2:
         _html(
@@ -1189,13 +1198,22 @@ if selected_menu == "🏠 Home":
         )
         fig_tr.update_layout(
             barmode="group",
-            height=280,
-            margin=dict(l=15, r=15, t=35, b=35),
+            height=300,
+            margin=dict(l=15, r=15, t=42, b=35),
             paper_bgcolor="#ffffff",
             plot_bgcolor="#ffffff",
-            legend=dict(orientation="h", y=1.15),
+            legend=dict(orientation="h", y=1.18, x=0.0),
         )
-        st.plotly_chart(fig_tr, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(
+            fig_tr,
+            use_container_width=True,
+            config={
+                "displayModeBar": True,
+                "scrollZoom": True,
+                "displaylogo": False,
+                "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+            },
+        )
 
     with col_h2:
         sel_id = st.session_state["selected_ws_id"]
