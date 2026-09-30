@@ -134,25 +134,61 @@ _html(
         box-shadow: 0 4px 12px rgba(21, 101, 192, 0.45) !important;
     }
 
-    /* Main Content Buttons (High-Contrast Royal Blue) */
-    section.main .stButton > button, section.main .stDownloadButton > button {
-        background-color: #1565c0 !important;
+    /* Main Content Primary Action Buttons (View Summary, View Full Details, View Details, Confirm, Generate) */
+    [data-testid="stMain"] .stButton > button[kind="primary"],
+    [data-testid="stMain"] .stDownloadButton > button,
+    [data-testid="stDialog"] .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #1565c0 0%, #1d4ed8 55%, #0284c7 100%) !important;
         color: #ffffff !important;
-        border: 1px solid #1d4ed8 !important;
+        border: 1px solid #1e40af !important;
         border-radius: 10px !important;
-        padding: 0.5rem 1.0rem !important;
+        padding: 0.52rem 1.1rem !important;
         font-weight: 700 !important;
         font-size: 0.88rem !important;
-        box-shadow: 0 2px 6px rgba(21, 101, 192, 0.20) !important;
+        letter-spacing: 0.01em !important;
+        box-shadow: 0 4px 12px rgba(21, 101, 192, 0.30) !important;
+        transition: all 0.18s ease !important;
         cursor: pointer !important;
     }
-    section.main .stButton > button:hover, section.main .stDownloadButton > button:hover {
-        background-color: #1e40af !important;
+    [data-testid="stMain"] .stButton > button[kind="primary"]:hover,
+    [data-testid="stMain"] .stDownloadButton > button:hover,
+    [data-testid="stDialog"] .stButton > button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #1e3a8a 0%, #1565c0 100%) !important;
         border-color: #1e3a8a !important;
         color: #ffffff !important;
+        box-shadow: 0 6px 16px rgba(21, 101, 192, 0.42) !important;
+        transform: translateY(-1px) !important;
     }
-    section.main .stButton > button p, section.main .stDownloadButton > button p {
+    [data-testid="stMain"] .stButton > button[kind="primary"] p,
+    [data-testid="stMain"] .stDownloadButton > button p,
+    [data-testid="stDialog"] .stButton > button[kind="primary"] p {
         color: #ffffff !important;
+        font-weight: 700 !important;
+    }
+
+    /* Main Content Secondary Pill Buttons (Filter pills, secondary actions) */
+    [data-testid="stMain"] .stButton > button[kind="secondary"],
+    [data-testid="stDialog"] .stButton > button[kind="secondary"] {
+        background: #ffffff !important;
+        color: #1e293b !important;
+        border: 1.5px solid #cbd5e1 !important;
+        border-radius: 999px !important;
+        padding: 0.45rem 1.0rem !important;
+        font-weight: 700 !important;
+        font-size: 0.86rem !important;
+        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05) !important;
+        transition: all 0.15s ease !important;
+        cursor: pointer !important;
+    }
+    [data-testid="stMain"] .stButton > button[kind="secondary"]:hover,
+    [data-testid="stDialog"] .stButton > button[kind="secondary"]:hover {
+        background: #eff6ff !important;
+        border-color: #3b82f6 !important;
+        color: #1d4ed8 !important;
+    }
+    [data-testid="stMain"] .stButton > button[kind="secondary"] p,
+    [data-testid="stDialog"] .stButton > button[kind="secondary"] p {
+        color: #1e293b !important;
         font-weight: 700 !important;
     }
 
@@ -367,13 +403,13 @@ def load_aquaprior_data(cache_v: str = "contiguous_v3"):
 
 df_all, ws_geojson_all, str_geojson_all, ml_report = load_aquaprior_data("contiguous_v3")
 
-# Session State Initialization
+# Session State Initialization (Default to Chennai as requested!)
 if "active_menu" not in st.session_state:
     st.session_state["active_menu"] = "🗺️ Explore Map"
 if "selected_district" not in st.session_state:
-    st.session_state["selected_district"] = "Tiruvannamalai District"
+    st.session_state["selected_district"] = "Chennai District"
 if "selected_ws_id" not in st.session_state:
-    st.session_state["selected_ws_id"] = "MW-024"
+    st.session_state["selected_ws_id"] = "MW-002"
 if "map_problem_filter" not in st.session_state:
     st.session_state["map_problem_filter"] = "All Problems"
 if "gmaps_api_key" not in st.session_state:
@@ -385,16 +421,16 @@ if "verification_records" not in st.session_state:
     }
 if "generated_reports" not in st.session_state:
     st.session_state["generated_reports"] = [
-        {"name": "Tiruvannamalai District Summary", "date": "30 Sep 2026", "status": "Ready", "fmt": "PDF"},
-        {"name": "MW-024 Watershed Report", "date": "28 Sep 2026", "status": "Ready", "fmt": "CSV"},
+        {"name": "Chennai District Summary", "date": "30 Sep 2026", "status": "Ready", "fmt": "PDF"},
+        {"name": "MW-002 Watershed Report", "date": "28 Sep 2026", "status": "Ready", "fmt": "CSV"},
         {"name": "Priority Areas — September 2026", "date": "25 Sep 2026", "status": "Ready", "fmt": "GIS"},
     ]
 
 
 def _status_badge_html(pclass: str, wid: str = "") -> str:
-    if wid == "MW-024" or pclass == "Critical Priority":
+    if wid in ("MW-024", "MW-001", "MW-002") or pclass == "Critical Priority":
         return '<span class="pill-very-high">⚠️ Very High</span>'
-    if wid == "MW-017" or pclass == "High Priority":
+    if wid in ("MW-017", "MW-003", "MW-008") or pclass == "High Priority":
         return '<span class="pill-high">⚠️ High</span>'
     if pclass == "Moderate Priority":
         return '<span class="pill-monitor">🕒 Monitor</span>'
@@ -408,83 +444,215 @@ def _conf_badge_html(conf_lvl: str) -> str:
 
 
 # ============================================================================
-# INTERACTIVE BACKEND MODAL DIALOGS (When clicking View Summary / View Details)
+# RICH EXECUTIVE WATERSHED SUMMARY DIALOG (When clicking View Summary / Full Details)
 # ============================================================================
-@st.dialog("🌊 Watershed Full Diagnostic & Satellite Summary", width="large")
+@st.dialog("🌊 Executive Watershed Diagnostic & Intervention Summary", width="large")
 def open_watershed_summary_dialog(wid: str) -> None:
     w = df_all[df_all["watershed_id"] == wid].iloc[0]
+    dist_clean = str(w["district"]).replace(" District", "")
+    v_status = st.session_state["verification_records"].get(wid, "Pending")
+
     _html(
         f"""
-        <div style="background:#f8fafc; padding:16px 20px; border-radius:12px; border-left:5px solid #1565c0; margin-bottom:14px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h3 style="margin:0; color:#0b2239;">{w['watershed_id']} — {w['block_name']} ({w['district']})</h3>
-                {_status_badge_html(w['priority_class'], w['watershed_id'])}
+        <div style="background:linear-gradient(135deg,#0b2239 0%,#1e3a8a 100%); padding:18px 22px; border-radius:14px; color:#ffffff; margin-bottom:14px; box-shadow:0 6px 18px rgba(15,23,42,0.15);">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+                <div>
+                    <div style="font-size:0.82rem; color:#93c5fd; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;">
+                        📍 Tamil Nadu &nbsp;❯&nbsp; {dist_clean} &nbsp;❯&nbsp; {w['block_name']}
+                    </div>
+                    <h3 style="margin:4px 0 4px 0; color:#ffffff; font-size:1.5rem; font-weight:800;">
+                        {w['watershed_id']} — {w['name']}
+                    </h3>
+                    <div style="font-size:0.88rem; color:#cbd5e1;">
+                        Catchment Area: <b>{w['area_km2']} km²</b> &nbsp;•&nbsp; GPS: <b>{w['lat']:.4f}°N, {w['lon']:.4f}°E</b> &nbsp;•&nbsp; Hydro-Cluster: <b>{w['cluster_name']}</b>
+                    </div>
+                </div>
+                <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+                    {_status_badge_html(w['priority_class'], w['watershed_id'])}
+                    {_conf_badge_html(w['confidence_level'])}
+                </div>
             </div>
-            <p style="margin:6px 0 0 0; color:#334155; font-size:0.94rem;">
-                <b>Catchment:</b> {w['name']} ({w['area_km2']} km²) &nbsp;|&nbsp;
-                <b>Priority Score:</b> {w['final_priority_score']}/100 &nbsp;|&nbsp;
-                <b>Trend:</b> {w['trend_class']}
-            </p>
-            <p style="margin:6px 0 0 0; color:#1e3a8a; font-size:0.92rem;">
-                <b>Main Reason:</b> {w['plain_reason']} ({w['top_stress_drivers']})
-            </p>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px;">
+            <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:12px; padding:12px 14px;">
+                <div style="font-size:0.78rem; color:#b91c1c; font-weight:700;">Priority Score</div>
+                <div style="font-size:1.45rem; font-weight:800; color:#7f1d1d;">{w['final_priority_score']}<span style="font-size:0.85rem; font-weight:600;">/100</span></div>
+                <div style="font-size:0.75rem; color:#991b1b;">{w['trend_class']}</div>
+            </div>
+            <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:12px 14px;">
+                <div style="font-size:0.78rem; color:#1d4ed8; font-weight:700;">Surface Water Loss</div>
+                <div style="font-size:1.45rem; font-weight:800; color:#1e3a8a;">-{w['water_10yr_decline_pct']:.1f}%</div>
+                <div style="font-size:0.75rem; color:#1e40af;">{w['historic_eri_count']} Historic Tanks/Eris</div>
+            </div>
+            <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:12px 14px;">
+                <div style="font-size:0.78rem; color:#15803d; font-weight:700;">Vegetation NDVI</div>
+                <div style="font-size:1.45rem; font-weight:800; color:#14532d;">{w['ndvi_mean']:.2f}</div>
+                <div style="font-size:0.75rem; color:#166534;">5-Yr Trend: {w['ndvi_5yr_trend']:+.3f}</div>
+            </div>
+            <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:12px; padding:12px 14px;">
+                <div style="font-size:0.78rem; color:#b45309; font-weight:700;">Built-Up Growth</div>
+                <div style="font-size:1.45rem; font-weight:800; color:#78350f;">+{w['builtup_5yr_growth_pct']:.1f}%</div>
+                <div style="font-size:0.75rem; color:#92400e;">Field Check: {v_status}</div>
+            </div>
         </div>
         """
     )
 
-    d_col1, d_col2 = st.columns([1.1, 1.0])
-    with d_col1:
-        st.markdown("##### 🛰️ 8 Satellite Parameters (Google Earth Engine)")
-        sat_table = pd.DataFrame(
-            [
-                {"Parameter": "1. SRTM DEM Elevation", "Value": f"{w['dem_elevation_m']} m (Relief: {w['dem_relief_m']} m)"},
-                {"Parameter": "2. Terrain Slope", "Value": f"{w['slope_deg']}°"},
-                {"Parameter": "3. Drainage Density", "Value": f"{w['drainage_density_km_km2']} km/km² (Order {w['stream_order']})"},
-                {"Parameter": "4. CHIRPS Rainfall", "Value": f"{w['rainfall_annual_mm']:.0f} mm ({w['rainfall_anomaly_pct']:+.1f}% anomaly)"},
-                {"Parameter": "5. Sentinel-2 NDVI", "Value": f"{w['ndvi_mean']:.2f} ({w['ndvi_5yr_trend']:+.3f} 5-yr trend)"},
-                {"Parameter": "6. Dynamic World LULC", "Value": f"{w['dominant_lulc']} (+{w['builtup_5yr_growth_pct']}% urban growth)"},
-                {"Parameter": "7. Soil Infiltration", "Value": f"{w['soil_texture']} (HSG-{w['hydrologic_soil_group']}, Score {w['soil_infiltration_score']})"},
-                {"Parameter": "8. JRC Surface Water", "Value": f"Occ: {w['water_occurrence_pct']}% (-{w['water_10yr_decline_pct']}% 10-yr decline)"},
-            ]
-        )
-        st.dataframe(sat_table, use_container_width=True, hide_index=True)
+    tab1, tab2, tab3 = st.tabs(
+        [
+            "📊 Priority Breakdown & 8 Satellite Parameters",
+            "🛠️ Recommended Solutions & Water Budget",
+            "📋 Quick Actions & Export",
+        ]
+    )
 
-    with d_col2:
-        st.markdown("##### 📊 SHAP-Style Priority Drivers")
-        attr_df = compute_local_feature_attributions(w, df_all)
-        fig_d = px.bar(
-            attr_df,
-            x="Priority Impact (pts)",
-            y="Indicator",
-            orientation="h",
-            color="Direction",
-            color_discrete_map={"Increases Priority (+)": "#ef4444", "Reduces Priority (-)": "#22c55e"},
-            text="Priority Impact (pts)",
-            height=290,
-        )
-        fig_d.update_traces(textposition="outside", cliponaxis=False)
-        fig_d.update_layout(
-            margin=dict(l=5, r=35, t=10, b=20),
-            showlegend=False,
-            yaxis_title="",
-            paper_bgcolor="#ffffff",
-            plot_bgcolor="#ffffff",
-        )
-        st.plotly_chart(fig_d, use_container_width=True, config={"displayModeBar": False})
+    with tab1:
+        d_col1, d_col2 = st.columns([1.08, 1.0], gap="medium")
+        with d_col1:
+            _html(
+                f"""
+                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:14px 16px; margin-bottom:12px;">
+                    <div style="font-weight:800; color:#0b2239; font-size:0.95rem; margin-bottom:10px;">
+                        🎯 5 Multi-Objective Priority Scores
+                    </div>
+                    <div style="margin-bottom:8px;">
+                        <div style="display:flex; justify-content:space-between; font-size:0.82rem; font-weight:700; color:#334155;">
+                            <span>💧 Water Scarcity Priority</span><span>{w['priority_water_scarcity']:.1f}/100</span>
+                        </div>
+                        <div style="height:8px; background:#e2e8f0; border-radius:999px; overflow:hidden; margin-top:3px;">
+                            <div style="width:{min(100, w['priority_water_scarcity'])}%; height:100%; background:#dc2626;"></div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:8px;">
+                        <div style="display:flex; justify-content:space-between; font-size:0.82rem; font-weight:700; color:#334155;">
+                            <span>🏞️ Surface-Water Restoration Priority</span><span>{w['priority_surface_restoration']:.1f}/100</span>
+                        </div>
+                        <div style="height:8px; background:#e2e8f0; border-radius:999px; overflow:hidden; margin-top:3px;">
+                            <div style="width:{min(100, w['priority_surface_restoration'])}%; height:100%; background:#f97316;"></div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:8px;">
+                        <div style="display:flex; justify-content:space-between; font-size:0.82rem; font-weight:700; color:#334155;">
+                            <span>⏬ Groundwater Recharge Need</span><span>{w['priority_gw_recharge']:.1f}/100</span>
+                        </div>
+                        <div style="height:8px; background:#e2e8f0; border-radius:999px; overflow:hidden; margin-top:3px;">
+                            <div style="width:{min(100, w['priority_gw_recharge'])}%; height:100%; background:#0284c7;"></div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:8px;">
+                        <div style="display:flex; justify-content:space-between; font-size:0.82rem; font-weight:700; color:#334155;">
+                            <span>⛰️ Runoff & Soil Erosion Risk</span><span>{w['priority_runoff_erosion']:.1f}/100</span>
+                        </div>
+                        <div style="height:8px; background:#e2e8f0; border-radius:999px; overflow:hidden; margin-top:3px;">
+                            <div style="width:{min(100, w['priority_runoff_erosion'])}%; height:100%; background:#eab308;"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:0.82rem; font-weight:700; color:#334155;">
+                            <span>🏙️ Urban Rainwater Harvesting Need</span><span>{w['priority_urban_rwh']:.1f}/100</span>
+                        </div>
+                        <div style="height:8px; background:#e2e8f0; border-radius:999px; overflow:hidden; margin-top:3px;">
+                            <div style="width:{min(100, w['priority_urban_rwh'])}%; height:100%; background:#7c3aed;"></div>
+                        </div>
+                    </div>
+                </div>
+                """
+            )
+            sat_table = pd.DataFrame(
+                [
+                    {"Satellite Parameter": "1. SRTM DEM Elevation", "Measured Value": f"{w['dem_elevation_m']} m (Relief: {w['dem_relief_m']} m)"},
+                    {"Satellite Parameter": "2. Terrain Slope", "Measured Value": f"{w['slope_deg']}°"},
+                    {"Satellite Parameter": "3. Drainage Density", "Measured Value": f"{w['drainage_density_km_km2']} km/km² (Order {w['stream_order']})"},
+                    {"Satellite Parameter": "4. CHIRPS Rainfall", "Measured Value": f"{w['rainfall_annual_mm']:.0f} mm ({w['rainfall_anomaly_pct']:+.1f}% anomaly)"},
+                    {"Satellite Parameter": "5. Sentinel-2 NDVI", "Measured Value": f"{w['ndvi_mean']:.2f} ({w['ndvi_5yr_trend']:+.3f} 5-yr trend)"},
+                    {"Satellite Parameter": "6. Dynamic World LULC", "Measured Value": f"{w['dominant_lulc']} (+{w['builtup_5yr_growth_pct']}% urban)"},
+                    {"Satellite Parameter": "7. Soil Infiltration", "Measured Value": f"{w['soil_texture']} (HSG-{w['hydrologic_soil_group']}, Score {w['soil_infiltration_score']})"},
+                    {"Satellite Parameter": "8. JRC Surface Water", "Measured Value": f"Occ: {w['water_occurrence_pct']}% (-{w['water_10yr_decline_pct']}% decline)"},
+                ]
+            )
+            st.dataframe(sat_table, use_container_width=True, hide_index=True, height=215)
 
-    act1, act2, act3 = st.columns(3)
-    if act1.button("💡 Go to Possible Solutions", key=f"dlg_sol_{wid}", use_container_width=True):
-        st.session_state["selected_ws_id"] = wid
-        st.session_state["active_menu"] = "💡 Possible Solutions"
-        st.rerun()
-    if act2.button("📋 Go to Field Verification", key=f"dlg_fv_{wid}", use_container_width=True):
-        st.session_state["selected_ws_id"] = wid
-        st.session_state["active_menu"] = "📋 Field Verification"
-        st.rerun()
-    if act3.button("🗺️ Locate on Explore Map", key=f"dlg_map_{wid}", use_container_width=True):
-        st.session_state["selected_ws_id"] = wid
-        st.session_state["active_menu"] = "🗺️ Explore Map"
-        st.rerun()
+        with d_col2:
+            st.markdown("##### 🔍 SHAP-Style Priority Drivers (Why Prioritized?)")
+            attr_df = compute_local_feature_attributions(w, df_all)
+            fig_d = px.bar(
+                attr_df,
+                x="Priority Impact (pts)",
+                y="Indicator",
+                orientation="h",
+                color="Direction",
+                color_discrete_map={"Increases Priority (+)": "#ef4444", "Reduces Priority (-)": "#22c55e"},
+                text="Priority Impact (pts)",
+                height=340,
+            )
+            fig_d.update_traces(textposition="outside", cliponaxis=False)
+            fig_d.update_layout(
+                margin=dict(l=5, r=40, t=10, b=20),
+                showlegend=False,
+                yaxis_title="",
+                paper_bgcolor="#ffffff",
+                plot_bgcolor="#ffffff",
+            )
+            st.plotly_chart(fig_d, use_container_width=True, config={"displayModeBar": False})
+
+    with tab2:
+        _html(
+            f"""
+            <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:14px 18px; margin-bottom:12px;">
+                <div style="font-size:0.84rem; color:#15803d; font-weight:700;">RECOMMENDED PRIMARY INTERVENTION (TOPSIS + HYDROLOGICAL RULES)</div>
+                <div style="font-size:1.25rem; font-weight:800; color:#14532d; margin:2px 0;">
+                    🛠️ {w['primary_intervention']} — {w['primary_suitability_score']:.1f}% Technical Suitability
+                </div>
+                <div style="font-size:0.88rem; color:#166534;">
+                    <b>Secondary Option:</b> {w['secondary_intervention']} ({w['secondary_suitability_score']:.1f}%) &nbsp;|&nbsp;
+                    <b>Harvestable Runoff Potential:</b> {w['harvestable_runoff_mcm']} MCM/yr (≈ {w['harvestable_runoff_mcm']*1000:,.0f} Million Liters/yr)
+                </div>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px;">
+                <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:14px;">
+                    <div style="font-weight:800; color:#0b2239;">🏞️ Tank / Eri Restoration</div>
+                    <div style="font-size:1.2rem; font-weight:800; color:#1565c0; margin:4px 0;">{w['suit_eri_restoration']:.1f}% Suitable</div>
+                    <div style="font-size:0.82rem; color:#475569;">Desilt {w['historic_eri_count']} existing tanks & clear foreshore supply channels.</div>
+                </div>
+                <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:14px;">
+                    <div style="font-weight:800; color:#0b2239;">🧱 Percolation / Check Dam</div>
+                    <div style="font-size:1.2rem; font-weight:800; color:#0284c7; margin:4px 0;">{max(w['suit_percolation_tank'], w['suit_check_dam']):.1f}% Suitable</div>
+                    <div style="font-size:0.82rem; color:#475569;">Across Order-{w['stream_order']} streams on {w['soil_texture']} (HSG-{w['hydrologic_soil_group']}).</div>
+                </div>
+                <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:14px;">
+                    <div style="font-weight:800; color:#0b2239;">🏘️ Urban RWH & Recharge</div>
+                    <div style="font-size:1.2rem; font-weight:800; color:#7c3aed; margin:4px 0;">{w['suit_urban_rwh']:.1f}% Suitable</div>
+                    <div style="font-size:0.82rem; color:#475569;">Stormwater recharge shafts for {w['builtup_pct']:.1f}% built-up catchment.</div>
+                </div>
+            </div>
+            """
+        )
+
+    with tab3:
+        st.markdown("##### 🚀 Next Steps for Decision Makers & Field Engineers")
+        act1, act2, act3 = st.columns(3)
+        if act1.button("💡 Open Possible Solutions ❯", key=f"dlg_sol_{wid}", type="primary", use_container_width=True):
+            st.session_state["selected_ws_id"] = wid
+            st.session_state["active_menu"] = "💡 Possible Solutions"
+            st.rerun()
+        if act2.button("📋 Start Field Verification ❯", key=f"dlg_fv_{wid}", type="primary", use_container_width=True):
+            st.session_state["selected_ws_id"] = wid
+            st.session_state["active_menu"] = "📋 Field Verification"
+            st.rerun()
+        if act3.button("🗺️ Center on Explore Map ❯", key=f"dlg_map_{wid}", type="secondary", use_container_width=True):
+            st.session_state["selected_ws_id"] = wid
+            st.session_state["selected_district"] = str(w["district"])
+            st.session_state["active_menu"] = "🗺️ Explore Map"
+            st.rerun()
+
+        single_csv = df_all[df_all["watershed_id"] == wid].to_csv(index=False).encode("utf-8")
+        st.download_button(
+            f"📥 Download {wid} Full Satellite & Priority Dossier (CSV)",
+            data=single_csv,
+            file_name=f"{wid.lower()}_watershed_summary.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
 
 
 @st.dialog("🛠️ Intervention Engineering & Suitability Details", width="large")
@@ -511,7 +679,7 @@ def open_solution_details_dialog(sol: Dict[str, Any], w: pd.Series) -> None:
         - **Estimated Harvestable Runoff Potential:** `{w['harvestable_runoff_mcm']} MCM/yr` (`≈ {w['harvestable_runoff_mcm']*1000:,.0f} Million Liters/yr`)
         """
     )
-    if st.button("📋 Proceed to Field Verification for This Site", key=f"sol_go_fv_{sol['title']}", use_container_width=True):
+    if st.button("📋 Proceed to Field Verification for This Site ❯", key=f"sol_go_fv_{sol['title']}", type="primary", use_container_width=True):
         st.session_state["active_menu"] = "📋 Field Verification"
         st.rerun()
 
@@ -590,9 +758,9 @@ selected_menu = st.session_state["active_menu"]
 top_c1, top_c2, top_c3 = st.columns([1.15, 1.65, 1.2], gap="small")
 
 district_choices = [
-    "Tiruvannamalai District",
     "Chennai District",
     "Chengalpattu District (SRM Catchment)",
+    "Tiruvannamalai District",
     "All Tamil Nadu Districts (60 Units)",
     "Kancheepuram District",
     "Coimbatore District",
@@ -617,6 +785,15 @@ with top_c1:
     )
     if top_dist_pick != st.session_state["selected_district"]:
         st.session_state["selected_district"] = top_dist_pick
+        # Automatically pick top priority watershed in the newly chosen district
+        if "All Tamil Nadu" in top_dist_pick:
+            sub_d = df_all
+        elif "Chengalpattu" in top_dist_pick:
+            sub_d = df_all[df_all["district"] == "Chengalpattu District"]
+        else:
+            sub_d = df_all[df_all["district"] == top_dist_pick]
+        if not sub_d.empty:
+            st.session_state["selected_ws_id"] = sub_d.sort_values("final_priority_score", ascending=False).iloc[0]["watershed_id"]
         st.rerun()
 
 selected_district = st.session_state["selected_district"]
@@ -624,7 +801,7 @@ selected_district = st.session_state["selected_district"]
 with top_c2:
     global_search = st.text_input(
         "🔍 Search",
-        placeholder="🔍 Search village or watershed...",
+        placeholder="🔍 Search village or watershed (e.g., Chennai, Velachery, SRM, Chengam)...",
         label_visibility="collapsed",
     )
 
@@ -650,11 +827,11 @@ else:
 
 if global_search.strip():
     q = global_search.strip().lower()
-    df_dist = df_dist[
-        df_dist["watershed_id"].str.lower().str.contains(q)
-        | df_dist["name"].str.lower().str.contains(q)
-        | df_dist["block_name"].str.lower().str.contains(q)
-        | df_dist["district"].str.lower().str.contains(q)
+    df_dist = df_all[
+        df_all["watershed_id"].str.lower().str.contains(q)
+        | df_all["name"].str.lower().str.contains(q)
+        | df_all["block_name"].str.lower().str.contains(q)
+        | df_all["district"].str.lower().str.contains(q)
     ].copy()
     if df_dist.empty:
         df_dist = df_all.copy()
@@ -718,8 +895,13 @@ def _build_priority_folium_map(
     height_px: int = 480,
     highlight_wid: str | None = None,
     show_legend_box: bool = True,
+    map_key: str = "folium_map",
 ) -> None:
-    """Builds and renders the interactive Google Maps Terrain + Contiguous Watershed Map."""
+    """
+    Builds and renders the interactive Google Maps Terrain + Contiguous Watershed Map.
+    Renders all 60 Tamil Nadu & Chennai polygons so panning anywhere shows the polygons,
+    and clicking a polygon on the map automatically updates the selected watershed & district!
+    """
     center_lat = float(df_map["lat"].mean())
     center_lon = float(df_map["lon"].mean())
     zoom_lvl = 11 if len(df_map) <= 12 else (10 if len(df_map) <= 25 else 7)
@@ -733,7 +915,6 @@ def _build_priority_folium_map(
     key_suffix = f"&key={st.session_state['gmaps_api_key']}" if st.session_state.get("gmaps_api_key") else ""
     google_tile_url = f"https://mt1.google.com/vt/lyrs={lyrs_code}&x={{x}}&y={{y}}&z={{z}}{key_suffix}"
 
-    # Pure Google Maps tile layer (NO CartoDB overlay so zero "API KEY REQUIRED" watermark!)
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=zoom_lvl,
@@ -742,16 +923,18 @@ def _build_priority_folium_map(
         control_scale=True,
     )
 
-    lookup = {r["watershed_id"]: r for r in df_map.to_dict(orient="records")}
-    vmin = float(df_map[color_col].min())
-    vmax = float(df_map[color_col].max())
+    # Render all 60 Tamil Nadu & Chennai watersheds on the map so panning to Chennai/anywhere works seamlessly!
+    all_lookup = {r["watershed_id"]: r for r in df_all.to_dict(orient="records")}
+    focus_ids = set(df_map["watershed_id"].values)
+    vmin = float(df_all[color_col].min())
+    vmax = float(df_all[color_col].max())
 
     def _poly_color(r: Dict[str, Any]) -> str:
         wid = r["watershed_id"]
         if color_col == "final_priority_score":
             if wid in ("MW-024", "MW-001", "MW-002") or r["priority_class"] == "Critical Priority":
                 return "#dc2626"
-            if wid in ("MW-017", "MW-029", "MW-062", "MW-063") or r["priority_class"] == "High Priority":
+            if wid in ("MW-017", "MW-003", "MW-008", "MW-029", "MW-062", "MW-063") or r["priority_class"] == "High Priority":
                 return "#f97316"
             if wid in ("MW-031", "MW-006", "MW-061") or r["priority_class"] == "Moderate Priority":
                 return "#facc15"
@@ -761,16 +944,17 @@ def _build_priority_folium_map(
         return palette[min(4, max(0, int(ratio * 4.99)))]
 
     features = []
-    all_lats: List[float] = []
-    all_lons: List[float] = []
+    focus_lats: List[float] = []
+    focus_lons: List[float] = []
 
     for feat in ws_geojson_all["features"]:
         wid = feat["properties"]["watershed_id"]
-        if wid in lookup:
-            r = lookup[wid]
-            for pt in feat["geometry"]["coordinates"][0]:
-                all_lons.append(float(pt[0]))
-                all_lats.append(float(pt[1]))
+        if wid in all_lookup:
+            r = all_lookup[wid]
+            if wid in focus_ids:
+                for pt in feat["geometry"]["coordinates"][0]:
+                    focus_lons.append(float(pt[0]))
+                    focus_lats.append(float(pt[1]))
             features.append(
                 {
                     "type": "Feature",
@@ -780,6 +964,7 @@ def _build_priority_folium_map(
                         "watershed_id": wid,
                         "name": r["name"],
                         "block_name": r["block_name"],
+                        "district": r["district"],
                         "priority_class": r["priority_class"],
                         "final_priority_score": r["final_priority_score"],
                         "plain_reason": r["plain_reason"],
@@ -791,13 +976,13 @@ def _build_priority_folium_map(
                 }
             )
 
-    if all_lats and all_lons and len(df_map) > 1:
-        pad_lat = (max(all_lats) - min(all_lats)) * 0.06
-        pad_lon = (max(all_lons) - min(all_lons)) * 0.06
+    if focus_lats and focus_lons and len(df_map) > 1:
+        pad_lat = (max(focus_lats) - min(focus_lats)) * 0.06
+        pad_lon = (max(focus_lons) - min(focus_lons)) * 0.06
         m.fit_bounds(
             [
-                [min(all_lats) - pad_lat, min(all_lons) - pad_lon],
-                [max(all_lats) + pad_lat, max(all_lons) + pad_lon],
+                [min(focus_lats) - pad_lat, min(focus_lons) - pad_lon],
+                [max(focus_lats) + pad_lat, max(focus_lons) + pad_lon],
             ]
         )
 
@@ -813,6 +998,7 @@ def _build_priority_folium_map(
         tooltip=folium.GeoJsonTooltip(
             fields=[
                 "watershed_id",
+                "district",
                 "block_name",
                 "name",
                 "priority_class",
@@ -823,6 +1009,7 @@ def _build_priority_folium_map(
             ],
             aliases=[
                 "Watershed ID:",
+                "District:",
                 "Block:",
                 "Catchment:",
                 "Status:",
@@ -835,22 +1022,18 @@ def _build_priority_folium_map(
     ).add_to(m)
 
     # Overlay HydroSHEDS drainage stream channels
-    stream_feats = [
-        sf for sf in str_geojson_all["features"] if sf["properties"]["watershed_id"] in lookup
-    ]
-    if stream_feats:
-        folium.GeoJson(
-            {"type": "FeatureCollection", "features": stream_feats},
-            name="HydroSHEDS Drainage Streams",
-            style_function=lambda _: {
-                "color": "#38bdf8",
-                "weight": 2.2,
-                "opacity": 0.82,
-            },
-        ).add_to(m)
+    folium.GeoJson(
+        str_geojson_all,
+        name="HydroSHEDS Drainage Streams",
+        style_function=lambda _: {
+            "color": "#38bdf8",
+            "weight": 2.2,
+            "opacity": 0.82,
+        },
+    ).add_to(m)
 
-    # Render watershed ID labels inside polygons (bold marker on selected watershed)
-    for wid, r in lookup.items():
+    # Render watershed ID labels inside polygons
+    for wid, r in all_lookup.items():
         if wid == highlight_wid:
             folium.Marker(
                 location=[r["lat"], r["lon"]],
@@ -858,7 +1041,7 @@ def _build_priority_folium_map(
                     html=f'<div style="transform:translate(-36px,-18px); text-align:center;"><div style="font-weight:800; color:#ffffff; font-size:14px; text-shadow:0 1px 5px rgba(0,0,0,0.95); white-space:nowrap;">{wid}</div><div style="width:12px; height:12px; background:#ffffff; border:3px solid #dc2626; border-radius:50%; margin:2px auto 0 auto; box-shadow:0 2px 6px rgba(0,0,0,0.5);"></div></div>'
                 ),
             ).add_to(m)
-        elif len(df_map) <= 15:
+        elif wid in focus_ids and len(df_map) <= 16:
             folium.Marker(
                 location=[r["lat"], r["lon"]],
                 icon=folium.DivIcon(
@@ -870,7 +1053,24 @@ def _build_priority_folium_map(
         legend_html = '<div style="position: fixed; bottom: 22px; left: 22px; z-index: 9999; background: rgba(255,255,255,0.96); padding: 12px 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); font-family: sans-serif; font-size: 13px; color: #0f172a; border: 1px solid #e2e8f0;"><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#dc2626; display:inline-block;"></span> <b>Very High</b></div><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#f97316; display:inline-block;"></span> <b>High</b></div><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#facc15; display:inline-block;"></span> <b>Monitor</b></div><div style="display:flex; align-items:center; gap:8px;"><span style="width:14px; height:14px; border-radius:50%; background:#22c55e; display:inline-block;"></span> <b>Stable</b></div></div>'
         m.get_root().html.add_child(folium.Element(legend_html))
 
-    st_folium(m, width=None, height=height_px, returned_objects=[])
+    map_out = st_folium(
+        m,
+        width=None,
+        height=height_px,
+        returned_objects=["last_active_drawing"],
+        key=map_key,
+    )
+    if map_out and map_out.get("last_active_drawing"):
+        props = map_out["last_active_drawing"].get("properties", {})
+        clicked_wid = props.get("watershed_id")
+        clicked_dist = props.get("district")
+        if clicked_wid and clicked_wid != st.session_state.get("selected_ws_id"):
+            st.session_state["selected_ws_id"] = clicked_wid
+            if clicked_dist and clicked_dist in district_choices:
+                st.session_state["selected_district"] = clicked_dist
+            elif clicked_dist == "Chengalpattu District":
+                st.session_state["selected_district"] = "Chengalpattu District (SRM Catchment)"
+            st.rerun()
 
 
 # ============================================================================
@@ -893,6 +1093,7 @@ if selected_menu == "🏠 Home":
             color_col="final_priority_score",
             height_px=420,
             highlight_wid=st.session_state["selected_ws_id"],
+            map_key="home_map",
         )
 
         st.markdown("#### 📉 5-Year Surface-Water & Vegetation Deterioration Trend")
@@ -951,60 +1152,30 @@ if selected_menu == "🏠 Home":
         )
 
         bcol1, bcol2, bcol3 = st.columns(3)
-        if bcol1.button("🔍 Full Summary", use_container_width=True):
+        if bcol1.button("📊 View Summary ❯", type="primary", use_container_width=True):
             open_watershed_summary_dialog(w_row["watershed_id"])
-        if bcol2.button("💡 Solutions", use_container_width=True):
+        if bcol2.button("💡 Solutions", type="secondary", use_container_width=True):
             st.session_state["active_menu"] = "💡 Possible Solutions"
             st.rerun()
-        if bcol3.button("📋 Verify Site", use_container_width=True):
+        if bcol3.button("📋 Verify Site", type="secondary", use_container_width=True):
             st.session_state["active_menu"] = "📋 Field Verification"
             st.rerun()
 
         st.markdown("#### 🚨 Ranked Priority List")
         q_df = df_dist.sort_values("final_priority_score", ascending=False).head(5)
         for i, (_, r) in enumerate(q_df.iterrows(), 1):
-            rc1, rc2, rc3 = st.columns([1.8, 1.1, 1.1])
+            rc1, rc2, rc3 = st.columns([1.75, 1.05, 1.2], vertical_alignment="center")
             rc1.markdown(f"**{i}. {r['watershed_id']}** ({r['block_name']})")
             rc2.markdown(_status_badge_html(r["priority_class"], r["watershed_id"]), unsafe_allow_html=True)
-            if rc3.button("View Summary ❯", key=f"home_vs_{r['watershed_id']}", use_container_width=True):
+            if rc3.button("📊 View Summary ❯", key=f"home_vs_{r['watershed_id']}", type="primary", use_container_width=True):
                 st.session_state["selected_ws_id"] = r["watershed_id"]
                 open_watershed_summary_dialog(r["watershed_id"])
 
 
 # ============================================================================
-# SECTION 2: 🗺️ EXPLORE MAP (Matches Screenshot "Explore Priority Map" 100%!)
+# SECTION 2: 🗺️ EXPLORE MAP (Clean Automatic "📍 Tamil Nadu > Chennai" Text!)
 # ============================================================================
 elif selected_menu == "🗺️ Explore Map":
-    _html('<div class="page-title">Explore Priority Map</div>')
-
-    # Interactive Breadcrumb: 📍 Tamil Nadu > [District Dropdown] so user can switch districts right here!
-    bc1, bc2, bc3 = st.columns([0.24, 0.52, 1.24], gap="small")
-    with bc1:
-        _html('<div style="padding-top:8px; font-size:1.02rem; color:#475569; font-weight:600;">📍 Tamil Nadu &nbsp;❯</div>')
-    with bc2:
-        exp_dist_pick = st.selectbox(
-            "Select District on Map",
-            district_choices,
-            index=curr_dist_idx,
-            key="explore_breadcrumb_district",
-            label_visibility="collapsed",
-        )
-        if exp_dist_pick != st.session_state["selected_district"]:
-            st.session_state["selected_district"] = exp_dist_pick
-            st.rerun()
-
-    pf_cols = st.columns(5, gap="small")
-    problem_pills = [
-        ("All Problems", "⊞  All Problems"),
-        ("Water Scarcity", "💧  Water Scarcity"),
-        ("Vegetation Loss", "🌱  Vegetation Loss"),
-        ("Surface-water Decline", "🏢  Surface-water Decline"),
-        ("Urban Growth", "🏙️  Urban Growth"),
-    ]
-    for idx_p, (p_key, p_lbl) in enumerate(problem_pills):
-        if pf_cols[idx_p].button(p_lbl, key=f"pf_{p_key}", use_container_width=True):
-            st.session_state["map_problem_filter"] = p_key
-
     active_pf = st.session_state["map_problem_filter"]
     df_map_filtered = df_dist.copy()
     color_metric = "final_priority_score"
@@ -1017,20 +1188,48 @@ elif selected_menu == "🗺️ Explore Map":
     elif active_pf == "Urban Growth":
         color_metric = "priority_urban_rwh"
 
+    picked_wid = st.session_state["selected_ws_id"]
+    if picked_wid not in df_map_filtered["watershed_id"].values:
+        picked_wid = df_map_filtered.sort_values("final_priority_score", ascending=False).iloc[0]["watershed_id"]
+        st.session_state["selected_ws_id"] = picked_wid
+
+    prow = df_all[df_all["watershed_id"] == picked_wid].iloc[0]
+    # Clean automatic location breadcrumb matching the active watershed on the map (e.g. 📍 Tamil Nadu > Chennai)
+    auto_dist_label = str(prow["district"]).replace(" District", "")
+
+    _html('<div class="page-title">Explore Priority Map</div>')
+    _html(
+        f'<div class="page-subtitle" style="font-size:1.05rem; color:#334155; margin-bottom:14px;">📍 Tamil Nadu &nbsp;❯&nbsp; <b style="color:#0b2239;">{auto_dist_label}</b></div>'
+    )
+
+    pf_cols = st.columns(5, gap="small")
+    problem_pills = [
+        ("All Problems", "⊞  All Problems"),
+        ("Water Scarcity", "💧  Water Scarcity"),
+        ("Vegetation Loss", "🌱  Vegetation Loss"),
+        ("Surface-water Decline", "🏢  Surface-water Decline"),
+        ("Urban Growth", "🏙️  Urban Growth"),
+    ]
+    for idx_p, (p_key, p_lbl) in enumerate(problem_pills):
+        if pf_cols[idx_p].button(
+            p_lbl,
+            key=f"pf_{p_key}",
+            type="primary" if active_pf == p_key else "secondary",
+            use_container_width=True,
+        ):
+            st.session_state["map_problem_filter"] = p_key
+            st.rerun()
+
     mcol1, mcol2 = st.columns([1.85, 1.0], gap="medium")
 
     with mcol1:
-        picked_wid = st.session_state["selected_ws_id"]
-        if picked_wid not in df_map_filtered["watershed_id"].values:
-            picked_wid = df_map_filtered.sort_values("final_priority_score", ascending=False).iloc[0]["watershed_id"]
-            st.session_state["selected_ws_id"] = picked_wid
-
         _build_priority_folium_map(
             df_map_filtered,
             color_col=color_metric,
             height_px=525,
             highlight_wid=picked_wid,
             show_legend_box=True,
+            map_key="explore_map_main",
         )
 
     with mcol2:
@@ -1048,15 +1247,19 @@ elif selected_menu == "🗺️ Explore Map":
             index=curr_w_idx,
             label_visibility="collapsed",
         )
-        picked_wid = chosen_ws_str.split(" — ")[0]
-        st.session_state["selected_ws_id"] = picked_wid
-        prow = df_all[df_all["watershed_id"] == picked_wid].iloc[0]
+        new_picked_wid = chosen_ws_str.split(" — ")[0]
+        if new_picked_wid != picked_wid:
+            st.session_state["selected_ws_id"] = new_picked_wid
+            st.rerun()
 
         _html(
             f"""
             <div class="ap-card" style="padding: 24px;">
-                <div style="font-size:2.0rem; font-weight:800; color:#0b2239; margin-bottom:14px;">
+                <div style="font-size:2.0rem; font-weight:800; color:#0b2239; margin-bottom:4px;">
                     {prow['watershed_id']}
+                </div>
+                <div style="font-size:0.9rem; font-weight:600; color:#1565c0; margin-bottom:14px;">
+                    📍 {prow['block_name']} • {auto_dist_label}
                 </div>
                 <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:14px; padding:16px 18px; display:flex; align-items:center; gap:14px; margin-bottom:16px;">
                     <div style="width:46px; height:46px; border-radius:50%; background:#dc2626; color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:1.35rem; flex-shrink:0;">
@@ -1090,7 +1293,7 @@ elif selected_menu == "🗺️ Explore Map":
             """
         )
 
-        if st.button("📄  View Full Details     ❯", key="exp_view_full", use_container_width=True):
+        if st.button("📄  View Full Details     ❯", key="exp_view_full", type="primary", use_container_width=True):
             open_watershed_summary_dialog(picked_wid)
 
 
@@ -1175,7 +1378,7 @@ elif selected_menu == "⚠️ Priority Areas":
             """
         )
 
-        # Render Interactive Rows with REAL Backend-Connected "View Summary >" Buttons!
+        # Render Interactive Rows with Styled Royal-Blue "View Summary ❯" Buttons!
         for idx_num, (_, row) in enumerate(df_queue.head(10).iterrows(), 1):
             num_bg = "#fee2e2" if idx_num <= 2 else ("#fef3c7" if idx_num <= 4 else "#dcfce7")
             num_col = "#b91c1c" if idx_num <= 2 else ("#b45309" if idx_num <= 4 else "#15803d")
@@ -1197,7 +1400,7 @@ elif selected_menu == "⚠️ Priority Areas":
             with r_cols[5]:
                 _html(_conf_badge_html(row["confidence_level"]))
             with r_cols[6]:
-                if st.button("View Summary ❯", key=f"pa_vs_{wid}", use_container_width=True):
+                if st.button("📊 View Summary ❯", key=f"pa_vs_{wid}", type="primary", use_container_width=True):
                     st.session_state["selected_ws_id"] = wid
                     open_watershed_summary_dialog(wid)
 
@@ -1426,7 +1629,7 @@ elif selected_menu == "💡 Possible Solutions":
                     </div>
                     """
                 )
-                if st.button(f"View Details: {sol['title']} ❯", key=f"sol_btn_{idx_s}", use_container_width=True):
+                if st.button(f"🛠️ View Details: {sol['title']} ❯", key=f"sol_btn_{idx_s}", type="primary", use_container_width=True):
                     open_solution_details_dialog(sol, s_row)
 
     with col_sol_right:
