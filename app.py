@@ -71,11 +71,32 @@ _html(
         user-select: text !important;
         -webkit-user-select: text !important;
         cursor: text !important;
+        color: #0f172a !important;
+        background-color: #ffffff !important;
     }
-    [data-baseweb="select"], [data-baseweb="select"] *, [data-baseweb="popover"] * {
+    [data-testid="stMain"] [data-baseweb="input"],
+    [data-testid="stMain"] [data-baseweb="base-input"] {
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 10px !important;
+        color: #0f172a !important;
+    }
+    [data-testid="stMain"] [data-baseweb="select"] > div {
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 10px !important;
+        color: #0f172a !important;
+    }
+    [data-testid="stMain"] [data-baseweb="select"] *,
+    [data-baseweb="popover"] *,
+    [data-baseweb="menu"] * {
         caret-color: transparent !important;
         user-select: none !important;
         cursor: pointer !important;
+        color: #0f172a !important;
+    }
+    [data-baseweb="menu"], [data-baseweb="popover"] > div {
+        background-color: #ffffff !important;
     }
     [data-baseweb="select"] input {
         caret-color: transparent !important;
@@ -88,7 +109,7 @@ _html(
         color: #0f172a !important;
     }
     .block-container {
-        padding-top: 1.0rem !important;
+        padding-top: 3.1rem !important;
         padding-bottom: 2.0rem !important;
         max-width: 1440px !important;
     }
@@ -771,13 +792,25 @@ district_choices = [
     "Chennai District",
     "Chengalpattu District (SRM Catchment)",
     "Tiruvannamalai District",
-    "All Tamil Nadu Districts (60 Units)",
-    "Kancheepuram District",
+    "Madurai District",
     "Coimbatore District",
     "Thanjavur District",
-    "Madurai District",
+    "Kancheepuram District",
     "Tirunelveli District",
+    "All Tamil Nadu Districts (60 Units)",
 ]
+
+
+def _normalize_district_choice(raw_dist: str) -> str:
+    if not raw_dist:
+        return "Chennai District"
+    if "Chengalpattu" in raw_dist:
+        return "Chengalpattu District (SRM Catchment)"
+    for dc in district_choices:
+        if raw_dist == dc or raw_dist.replace(" District", "") in dc:
+            return dc
+    return "Chennai District"
+
 
 curr_dist_idx = (
     district_choices.index(st.session_state["selected_district"])
@@ -790,12 +823,12 @@ with top_c1:
         "📍 District",
         district_choices,
         index=curr_dist_idx,
-        key="top_district_selectbox",
+        key=f"top_dist_sel_{st.session_state['selected_district']}",
         label_visibility="collapsed",
     )
     if top_dist_pick != st.session_state["selected_district"]:
         st.session_state["selected_district"] = top_dist_pick
-        # Automatically pick top priority watershed in the newly chosen district
+        st.session_state["_keep_user_camera"] = False
         if "All Tamil Nadu" in top_dist_pick:
             sub_d = df_all
         elif "Chengalpattu" in top_dist_pick:
@@ -803,7 +836,10 @@ with top_c1:
         else:
             sub_d = df_all[df_all["district"] == top_dist_pick]
         if not sub_d.empty:
-            st.session_state["selected_ws_id"] = sub_d.sort_values("final_priority_score", ascending=False).iloc[0]["watershed_id"]
+            top_w = sub_d.sort_values("final_priority_score", ascending=False).iloc[0]
+            st.session_state["selected_ws_id"] = str(top_w["watershed_id"])
+            st.session_state["map_camera_center"] = [float(sub_d["lat"].mean()), float(sub_d["lon"].mean())]
+            st.session_state["map_camera_zoom"] = 7 if "All Tamil Nadu" in top_dist_pick else 11
         st.rerun()
 
 selected_district = st.session_state["selected_district"]
@@ -811,7 +847,7 @@ selected_district = st.session_state["selected_district"]
 with top_c2:
     global_search = st.text_input(
         "🔍 Search",
-        placeholder="🔍 Search village or watershed (e.g., Chennai, Velachery, SRM, Chengam)...",
+        placeholder="🔍 Search city, village or watershed (e.g., Madurai, Chennai, Velachery, SRM, Chengam)...",
         label_visibility="collapsed",
     )
 
@@ -837,14 +873,20 @@ else:
 
 if global_search.strip():
     q = global_search.strip().lower()
-    df_dist = df_all[
+    df_search_hits = df_all[
         df_all["watershed_id"].str.lower().str.contains(q)
         | df_all["name"].str.lower().str.contains(q)
         | df_all["block_name"].str.lower().str.contains(q)
         | df_all["district"].str.lower().str.contains(q)
     ].copy()
-    if df_dist.empty:
-        df_dist = df_all.copy()
+    if not df_search_hits.empty:
+        df_dist = df_search_hits
+        first_hit = df_search_hits.sort_values("final_priority_score", ascending=False).iloc[0]
+        if st.session_state.get("_last_search_q") != q:
+            st.session_state["_last_search_q"] = q
+            st.session_state["selected_ws_id"] = str(first_hit["watershed_id"])
+            st.session_state["selected_district"] = _normalize_district_choice(str(first_hit["district"]))
+            st.session_state["_keep_user_camera"] = False
 
 
 def _render_four_kpi_cards(df_subset: pd.DataFrame) -> None:
@@ -909,12 +951,18 @@ def _build_priority_folium_map(
 ) -> None:
     """
     Builds and renders the interactive Google Maps Terrain + Contiguous Watershed Map.
-    Renders all 60 Tamil Nadu & Chennai polygons so panning anywhere shows the polygons,
-    and clicking a polygon on the map automatically updates the selected watershed & district!
+    Renders all 60 Tamil Nadu watersheds with labels so panning or clicking anywhere
+    (Madurai, Chennai, Tiruvannamalai, Coimbatore, etc.) dynamically updates the
+    'Tamil Nadu > <District>' breadcrumb and Selected Watershed panel!
     """
-    center_lat = float(df_map["lat"].mean())
-    center_lon = float(df_map["lon"].mean())
-    zoom_lvl = 11 if len(df_map) <= 12 else (10 if len(df_map) <= 25 else 7)
+    use_saved_cam = bool(st.session_state.get("_keep_user_camera")) and bool(st.session_state.get("map_camera_center"))
+    if use_saved_cam and len(df_map) > 1:
+        center_lat, center_lon = st.session_state["map_camera_center"]
+        zoom_lvl = int(st.session_state.get("map_camera_zoom", 11))
+    else:
+        center_lat = float(df_map["lat"].mean())
+        center_lon = float(df_map["lon"].mean())
+        zoom_lvl = 11 if len(df_map) <= 12 else (10 if len(df_map) <= 25 else 7)
 
     lyrs_code = "p"
     if gmaps_mode == "Google Satellite Hybrid":
@@ -933,11 +981,14 @@ def _build_priority_folium_map(
         control_scale=True,
     )
 
-    # Hide "Leaflet | Google Maps Terrain & Satellite" attribution and configure auto-hide/show legend CSS
+    # Hide "Leaflet | Google Maps Terrain & Satellite" attribution, make markers click-through, and configure auto-reveal legend
     map_custom_css = """
     <style>
     .leaflet-control-attribution {
         display: none !important;
+    }
+    .leaflet-marker-icon, .leaflet-marker-shadow, .leaflet-div-icon {
+        pointer-events: none !important;
     }
     #ap-map-legend {
         position: fixed;
@@ -967,7 +1018,7 @@ def _build_priority_folium_map(
     """
     m.get_root().header.add_child(folium.Element(map_custom_css))
 
-    # Render all 60 Tamil Nadu & Chennai watersheds on the map so panning to Chennai/anywhere works seamlessly!
+    # Render all 60 Tamil Nadu watersheds on the map so panning to Madurai, Chennai, Coimbatore, etc. works seamlessly!
     all_lookup = {r["watershed_id"]: r for r in df_all.to_dict(orient="records")}
     focus_ids = set(df_map["watershed_id"].values)
     vmin = float(df_all[color_col].min())
@@ -1020,7 +1071,7 @@ def _build_priority_folium_map(
                 }
             )
 
-    if focus_lats and focus_lons and len(df_map) > 1:
+    if focus_lats and focus_lons and len(df_map) > 1 and not use_saved_cam:
         pad_lat = (max(focus_lats) - min(focus_lats)) * 0.06
         pad_lon = (max(focus_lons) - min(focus_lons)) * 0.06
         m.fit_bounds(
@@ -1076,20 +1127,20 @@ def _build_priority_folium_map(
         },
     ).add_to(m)
 
-    # Render watershed ID labels inside polygons
+    # Render watershed ID labels inside all 60 Tamil Nadu polygons so Madurai, Chennai, etc. are all labeled
     for wid, r in all_lookup.items():
         if wid == highlight_wid:
             folium.Marker(
                 location=[r["lat"], r["lon"]],
                 icon=folium.DivIcon(
-                    html=f'<div style="transform:translate(-36px,-18px); text-align:center;"><div style="font-weight:800; color:#ffffff; font-size:14px; text-shadow:0 1px 5px rgba(0,0,0,0.95); white-space:nowrap;">{wid}</div><div style="width:12px; height:12px; background:#ffffff; border:3px solid #dc2626; border-radius:50%; margin:2px auto 0 auto; box-shadow:0 2px 6px rgba(0,0,0,0.5);"></div></div>'
+                    html=f'<div style="transform:translate(-36px,-18px); text-align:center; pointer-events:none;"><div style="font-weight:800; color:#ffffff; font-size:14px; text-shadow:0 1px 5px rgba(0,0,0,0.95); white-space:nowrap;">{wid}</div><div style="width:12px; height:12px; background:#ffffff; border:3px solid #dc2626; border-radius:50%; margin:2px auto 0 auto; box-shadow:0 2px 6px rgba(0,0,0,0.5);"></div></div>'
                 ),
             ).add_to(m)
-        elif wid in focus_ids and len(df_map) <= 16:
+        else:
             folium.Marker(
                 location=[r["lat"], r["lon"]],
                 icon=folium.DivIcon(
-                    html=f'<div style="transform:translate(-26px,-8px); text-align:center;"><div style="font-weight:700; color:#ffffff; font-size:11px; text-shadow:0 1px 3px rgba(0,0,0,0.85); white-space:nowrap; opacity:0.92;">{wid}</div></div>'
+                    html=f'<div style="transform:translate(-26px,-8px); text-align:center; pointer-events:none;"><div style="font-weight:700; color:#ffffff; font-size:11px; text-shadow:0 1px 3px rgba(0,0,0,0.85); white-space:nowrap; opacity:0.92;">{wid}</div></div>'
                 ),
             ).add_to(m)
 
@@ -1134,24 +1185,53 @@ def _build_priority_folium_map(
         )
         m.add_child(legend_motion_js)
 
+    returned_objs = ["last_active_drawing", "center", "zoom"] if show_legend_box else ["last_active_drawing"]
     map_out = st_folium(
         m,
         width=None,
         height=height_px,
-        returned_objects=["last_active_drawing"],
+        returned_objects=returned_objs,
         key=map_key,
     )
-    if map_out and map_out.get("last_active_drawing"):
-        props = map_out["last_active_drawing"].get("properties", {})
-        clicked_wid = props.get("watershed_id")
-        clicked_dist = props.get("district")
-        if clicked_wid and clicked_wid != st.session_state.get("selected_ws_id"):
-            st.session_state["selected_ws_id"] = clicked_wid
-            if clicked_dist and clicked_dist in district_choices:
+    if map_out:
+        # 1. Handle NEW polygon click anywhere in Tamil Nadu (e.g. Madurai, Chennai, Coimbatore, Tiruvannamalai)
+        if map_out.get("last_active_drawing"):
+            props = map_out["last_active_drawing"].get("properties", {})
+            clicked_wid = props.get("watershed_id")
+            clicked_dist = _normalize_district_choice(str(props.get("district", "")))
+            if clicked_wid and clicked_wid != st.session_state.get("_last_clicked_drawing_wid"):
+                st.session_state["_last_clicked_drawing_wid"] = clicked_wid
+                st.session_state["selected_ws_id"] = clicked_wid
                 st.session_state["selected_district"] = clicked_dist
-            elif clicked_dist == "Chengalpattu District":
-                st.session_state["selected_district"] = "Chengalpattu District (SRM Catchment)"
-            st.rerun()
+                if map_out.get("center"):
+                    st.session_state["map_camera_center"] = [
+                        float(map_out["center"]["lat"]),
+                        float(map_out["center"]["lng"]),
+                    ]
+                    st.session_state["map_camera_zoom"] = int(map_out.get("zoom") or 11)
+                    st.session_state["_keep_user_camera"] = True
+                st.rerun()
+
+        # 2. Handle map panning/scrolling to another district (e.g. panning from Chennai to Madurai)
+        if show_legend_box and map_out.get("center"):
+            c_lat = float(map_out["center"]["lat"])
+            c_lon = float(map_out["center"]["lng"])
+            c_zoom = int(map_out.get("zoom") or 11)
+            center_sig = (round(c_lat, 2), round(c_lon, 2))
+            if center_sig != st.session_state.get("_last_map_center_sig"):
+                st.session_state["_last_map_center_sig"] = center_sig
+                dists = ((df_all["lat"] - c_lat) ** 2 + (df_all["lon"] - c_lon) ** 2) ** 0.5
+                min_idx = dists.idxmin()
+                if float(dists.loc[min_idx]) <= 0.65:
+                    nearest_row = df_all.loc[min_idx]
+                    panned_dist = _normalize_district_choice(str(nearest_row["district"]))
+                    if panned_dist != st.session_state.get("selected_district"):
+                        st.session_state["selected_district"] = panned_dist
+                        st.session_state["selected_ws_id"] = str(nearest_row["watershed_id"])
+                        st.session_state["map_camera_center"] = [c_lat, c_lon]
+                        st.session_state["map_camera_zoom"] = c_zoom
+                        st.session_state["_keep_user_camera"] = True
+                        st.rerun()
 
 
 # ============================================================================
@@ -1263,7 +1343,7 @@ if selected_menu == "🏠 Home":
 
 
 # ============================================================================
-# SECTION 2: 🗺️ EXPLORE MAP (Clean Automatic "📍 Tamil Nadu > Chennai" Text!)
+# SECTION 2: 🗺️ EXPLORE MAP (Dynamic "📍 Tamil Nadu > <District>" Breadcrumb!)
 # ============================================================================
 elif selected_menu == "🗺️ Explore Map":
     active_pf = st.session_state["map_problem_filter"]
@@ -1279,12 +1359,12 @@ elif selected_menu == "🗺️ Explore Map":
         color_metric = "priority_urban_rwh"
 
     picked_wid = st.session_state["selected_ws_id"]
-    if picked_wid not in df_map_filtered["watershed_id"].values:
+    if picked_wid not in df_all["watershed_id"].values:
         picked_wid = df_map_filtered.sort_values("final_priority_score", ascending=False).iloc[0]["watershed_id"]
         st.session_state["selected_ws_id"] = picked_wid
 
     prow = df_all[df_all["watershed_id"] == picked_wid].iloc[0]
-    # Clean automatic location breadcrumb matching the active watershed on the map (e.g. 📍 Tamil Nadu > Chennai)
+    # Clean automatic location breadcrumb matching the active watershed/district on the map (e.g. 📍 Tamil Nadu ❯ Madurai or 📍 Tamil Nadu ❯ Chennai)
     auto_dist_label = str(prow["district"]).replace(" District", "")
 
     _html('<div class="page-title">Explore Priority Map</div>')
@@ -1323,24 +1403,47 @@ elif selected_menu == "🗺️ Explore Map":
         )
 
     with mcol2:
+        # Order dropdown with active district's watersheds first, followed by all other Tamil Nadu districts (Madurai, Chennai, etc.)
+        df_other = df_all[~df_all["watershed_id"].isin(df_map_filtered["watershed_id"])]
+        df_dropdown_all = pd.concat([df_map_filtered, df_other], ignore_index=True)
         ws_pick_list = [
-            f"{r['watershed_id']} — {r['block_name']}" for _, r in df_map_filtered.iterrows()
+            f"{r['watershed_id']} — {r['block_name']} ({str(r['district']).replace(' District', '')})"
+            for _, r in df_dropdown_all.iterrows()
         ]
         curr_w_idx = 0
         for i_w, w_lbl in enumerate(ws_pick_list):
-            if picked_wid in w_lbl:
+            if w_lbl.startswith(f"{picked_wid} —"):
                 curr_w_idx = i_w
                 break
         chosen_ws_str = st.selectbox(
             "Select Watershed",
             ws_pick_list,
             index=curr_w_idx,
+            key=f"exp_ws_sel_{picked_wid}",
             label_visibility="collapsed",
         )
         new_picked_wid = chosen_ws_str.split(" — ")[0]
         if new_picked_wid != picked_wid:
+            new_w_row = df_all[df_all["watershed_id"] == new_picked_wid].iloc[0]
             st.session_state["selected_ws_id"] = new_picked_wid
+            st.session_state["selected_district"] = _normalize_district_choice(str(new_w_row["district"]))
+            st.session_state["map_camera_center"] = [float(new_w_row["lat"]), float(new_w_row["lon"])]
+            st.session_state["map_camera_zoom"] = 11
+            st.session_state["_keep_user_camera"] = True
             st.rerun()
+
+        if prow["priority_class"] in ("Critical Priority", "High Priority") or picked_wid in ("MW-024", "MW-001", "MW-002"):
+            urg_bg, urg_bdr, urg_ic_bg, urg_ic, urg_title, urg_col, urg_sub = (
+                "#fef2f2", "#fecaca", "#dc2626", "⚠️", "Urgent Attention", "#991b1b", "#b91c1c"
+            )
+        elif prow["priority_class"] == "Moderate Priority":
+            urg_bg, urg_bdr, urg_ic_bg, urg_ic, urg_title, urg_col, urg_sub = (
+                "#fffbeb", "#fde68a", "#d97706", "🕒", "Needs Monitoring", "#92400e", "#b45309"
+            )
+        else:
+            urg_bg, urg_bdr, urg_ic_bg, urg_ic, urg_title, urg_col, urg_sub = (
+                "#f0fdf4", "#bbf7d0", "#16a34a", "🌱", "Stable / Improving", "#166534", "#15803d"
+            )
 
         _html(
             f"""
@@ -1351,13 +1454,13 @@ elif selected_menu == "🗺️ Explore Map":
                 <div style="font-size:0.9rem; font-weight:600; color:#1565c0; margin-bottom:14px;">
                     📍 {prow['block_name']} • {auto_dist_label}
                 </div>
-                <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:14px; padding:16px 18px; display:flex; align-items:center; gap:14px; margin-bottom:16px;">
-                    <div style="width:46px; height:46px; border-radius:50%; background:#dc2626; color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:1.35rem; flex-shrink:0;">
-                        ⚠️
+                <div style="background:{urg_bg}; border:1px solid {urg_bdr}; border-radius:14px; padding:16px 18px; display:flex; align-items:center; gap:14px; margin-bottom:16px;">
+                    <div style="width:46px; height:46px; border-radius:50%; background:{urg_ic_bg}; color:#ffffff; display:flex; align-items:center; justify-content:center; font-size:1.35rem; flex-shrink:0;">
+                        {urg_ic}
                     </div>
                     <div>
-                        <div style="font-size:1.12rem; font-weight:800; color:#991b1b;">Urgent Attention</div>
-                        <div style="font-size:0.92rem; color:#b91c1c; font-weight:500;">{prow['trend_class']}</div>
+                        <div style="font-size:1.12rem; font-weight:800; color:{urg_col};">{urg_title}</div>
+                        <div style="font-size:0.92rem; color:{urg_sub}; font-weight:500;">{prow['trend_class']}</div>
                     </div>
                 </div>
                 <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid #f1f5f9;">
