@@ -18,6 +18,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List
 
+import branca
 import folium
 import numpy as np
 import pandas as pd
@@ -919,9 +920,43 @@ def _build_priority_folium_map(
         location=[center_lat, center_lon],
         zoom_start=zoom_lvl,
         tiles=google_tile_url,
-        attr="Google Maps Terrain & Satellite",
+        attr=" ",
         control_scale=True,
     )
+
+    # Hide "Leaflet | Google Maps Terrain & Satellite" attribution and configure auto-hide/show legend CSS
+    map_custom_css = """
+    <style>
+    .leaflet-control-attribution {
+        display: none !important;
+    }
+    #ap-map-legend {
+        position: fixed;
+        bottom: 46px;
+        left: 16px;
+        z-index: 9999;
+        background: rgba(255, 255, 255, 0.96);
+        padding: 12px 16px;
+        border-radius: 12px;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
+        font-family: sans-serif;
+        font-size: 13px;
+        color: #0f172a;
+        border: 1px solid #e2e8f0;
+        opacity: 0;
+        transform: translateY(8px);
+        pointer-events: none;
+        transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+    #ap-map-legend.ap-legend-visible,
+    #ap-map-legend:hover {
+        opacity: 1 !important;
+        transform: translateY(0) !important;
+        pointer-events: auto !important;
+    }
+    </style>
+    """
+    m.get_root().header.add_child(folium.Element(map_custom_css))
 
     # Render all 60 Tamil Nadu & Chennai watersheds on the map so panning to Chennai/anywhere works seamlessly!
     all_lookup = {r["watershed_id"]: r for r in df_all.to_dict(orient="records")}
@@ -1050,8 +1085,45 @@ def _build_priority_folium_map(
             ).add_to(m)
 
     if show_legend_box:
-        legend_html = '<div style="position: fixed; bottom: 22px; left: 22px; z-index: 9999; background: rgba(255,255,255,0.96); padding: 12px 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); font-family: sans-serif; font-size: 13px; color: #0f172a; border: 1px solid #e2e8f0;"><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#dc2626; display:inline-block;"></span> <b>Very High</b></div><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#f97316; display:inline-block;"></span> <b>High</b></div><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#facc15; display:inline-block;"></span> <b>Monitor</b></div><div style="display:flex; align-items:center; gap:8px;"><span style="width:14px; height:14px; border-radius:50%; background:#22c55e; display:inline-block;"></span> <b>Stable</b></div></div>'
+        legend_html = (
+            '<div id="ap-map-legend">'
+            '<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#dc2626; display:inline-block;"></span> <b>Very High</b></div>'
+            '<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#f97316; display:inline-block;"></span> <b>High</b></div>'
+            '<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#facc15; display:inline-block;"></span> <b>Monitor</b></div>'
+            '<div style="display:flex; align-items:center; gap:8px;"><span style="width:14px; height:14px; border-radius:50%; background:#22c55e; display:inline-block;"></span> <b>Stable</b></div>'
+            '</div>'
+        )
         m.get_root().html.add_child(folium.Element(legend_html))
+
+        legend_motion_js = branca.element.MacroElement()
+        legend_motion_js._template = branca.element.Template(
+            """
+            {% macro script(this, kwargs) %}
+            (function() {
+                var hideLegendTimer = null;
+                function revealLegendOnMouseMove() {
+                    var leg = document.getElementById('ap-map-legend');
+                    if (!leg) return;
+                    leg.classList.add('ap-legend-visible');
+                    if (hideLegendTimer) clearTimeout(hideLegendTimer);
+                    hideLegendTimer = setTimeout(function() {
+                        if (leg && !leg.matches(':hover')) {
+                            leg.classList.remove('ap-legend-visible');
+                        }
+                    }, 1300);
+                }
+                function hideLegendOnMouseLeave() {
+                    var leg = document.getElementById('ap-map-legend');
+                    if (leg) leg.classList.remove('ap-legend-visible');
+                    if (hideLegendTimer) clearTimeout(hideLegendTimer);
+                }
+                document.addEventListener('mousemove', revealLegendOnMouseMove, { passive: true });
+                document.addEventListener('mouseleave', hideLegendOnMouseLeave, { passive: true });
+            })();
+            {% endmacro %}
+            """
+        )
+        m.add_child(legend_motion_js)
 
     map_out = st_folium(
         m,
