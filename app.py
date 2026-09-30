@@ -338,7 +338,7 @@ _html(
 
 
 @st.cache_data(show_spinner=False)
-def load_aquaprior_data():
+def load_aquaprior_data(cache_v: str = "contiguous_v3"):
     data_dir = Path(__file__).resolve().parent / "data"
     csv_path = data_dir / "tamil_nadu_micro_watersheds.csv"
     ws_path = data_dir / "tamil_nadu_watersheds.geojson"
@@ -346,7 +346,11 @@ def load_aquaprior_data():
 
     if csv_path.exists() and ws_path.exists() and str_path.exists():
         df_raw = pd.read_csv(csv_path)
-        if "block_name" not in df_raw.columns or "plain_reason" not in df_raw.columns:
+        if (
+            "block_name" not in df_raw.columns
+            or "plain_reason" not in df_raw.columns
+            or "MW-061" not in df_raw["watershed_id"].values
+        ):
             df_raw, ws_geojson, str_geojson = save_generated_artifacts(data_dir)
         else:
             with open(ws_path, "r", encoding="utf-8") as f:
@@ -361,15 +365,19 @@ def load_aquaprior_data():
     return df_scored, ws_geojson, str_geojson, ml_report
 
 
-df_all, ws_geojson_all, str_geojson_all, ml_report = load_aquaprior_data()
+df_all, ws_geojson_all, str_geojson_all, ml_report = load_aquaprior_data("contiguous_v3")
 
 # Session State Initialization
 if "active_menu" not in st.session_state:
     st.session_state["active_menu"] = "🗺️ Explore Map"
+if "selected_district" not in st.session_state:
+    st.session_state["selected_district"] = "Tiruvannamalai District"
 if "selected_ws_id" not in st.session_state:
     st.session_state["selected_ws_id"] = "MW-024"
 if "map_problem_filter" not in st.session_state:
     st.session_state["map_problem_filter"] = "All Problems"
+if "gmaps_api_key" not in st.session_state:
+    st.session_state["gmaps_api_key"] = ""
 if "verification_records" not in st.session_state:
     st.session_state["verification_records"] = {
         r["watershed_id"]: r.get("verification_status", "Pending")
@@ -547,7 +555,7 @@ with st.sidebar:
 
     _html(
         """
-        <hr style="border-color:rgba(255,255,255,0.12); margin:22px 0 14px 0;"/>
+        <hr style="border-color:rgba(255,255,255,0.12); margin:18px 0 12px 0;"/>
         <div style="font-size:0.78rem; color:#94a3b8; line-height:1.55; padding: 0 6px;">
             <b style="color:#e2e8f0;">🛰️ Satellite Feeds (GEE)</b><br/>
             • SRTM 30m DEM & Slope<br/>
@@ -560,6 +568,19 @@ with st.sidebar:
         </div>
         """
     )
+    with st.expander("🗺️ Google Maps Settings"):
+        gmaps_mode = st.selectbox(
+            "Basemap Style",
+            ["Google Terrain Relief", "Google Satellite Hybrid", "Google Roadmap"],
+            index=0,
+        )
+        gmaps_key_in = st.text_input(
+            "Google Maps API Key (Optional)",
+            value=st.session_state.get("gmaps_api_key", ""),
+            type="password",
+            placeholder="AIzaSy... (Terrain works out-of-the-box)",
+        )
+        st.session_state["gmaps_api_key"] = gmaps_key_in.strip()
 
 selected_menu = st.session_state["active_menu"]
 
@@ -570,22 +591,35 @@ top_c1, top_c2, top_c3 = st.columns([1.15, 1.65, 1.2], gap="small")
 
 district_choices = [
     "Tiruvannamalai District",
-    "All Tamil Nadu Districts (60 Units)",
     "Chennai District",
     "Chengalpattu District (SRM Catchment)",
+    "All Tamil Nadu Districts (60 Units)",
     "Kancheepuram District",
     "Coimbatore District",
     "Thanjavur District",
     "Madurai District",
     "Tirunelveli District",
 ]
+
+curr_dist_idx = (
+    district_choices.index(st.session_state["selected_district"])
+    if st.session_state.get("selected_district") in district_choices
+    else 0
+)
+
 with top_c1:
-    selected_district = st.selectbox(
+    top_dist_pick = st.selectbox(
         "📍 District",
         district_choices,
-        index=0,
+        index=curr_dist_idx,
+        key="top_district_selectbox",
         label_visibility="collapsed",
     )
+    if top_dist_pick != st.session_state["selected_district"]:
+        st.session_state["selected_district"] = top_dist_pick
+        st.rerun()
+
+selected_district = st.session_state["selected_district"]
 
 with top_c2:
     global_search = st.text_input(
@@ -685,23 +719,28 @@ def _build_priority_folium_map(
     highlight_wid: str | None = None,
     show_legend_box: bool = True,
 ) -> None:
-    """Builds and renders the interactive Folium map with auto-fit bounds, labels, and legend."""
+    """Builds and renders the interactive Google Maps Terrain + Contiguous Watershed Map."""
     center_lat = float(df_map["lat"].mean())
     center_lon = float(df_map["lon"].mean())
-    zoom_lvl = 10 if len(df_map) <= 12 else (9 if len(df_map) <= 25 else 7)
+    zoom_lvl = 11 if len(df_map) <= 12 else (10 if len(df_map) <= 25 else 7)
 
+    lyrs_code = "p"
+    if gmaps_mode == "Google Satellite Hybrid":
+        lyrs_code = "y"
+    elif gmaps_mode == "Google Roadmap":
+        lyrs_code = "m"
+
+    key_suffix = f"&key={st.session_state['gmaps_api_key']}" if st.session_state.get("gmaps_api_key") else ""
+    google_tile_url = f"https://mt1.google.com/vt/lyrs={lyrs_code}&x={{x}}&y={{y}}&z={{z}}{key_suffix}"
+
+    # Pure Google Maps tile layer (NO CartoDB overlay so zero "API KEY REQUIRED" watermark!)
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=zoom_lvl,
-        tiles="https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}",
-        attr="Google Terrain Relief",
+        tiles=google_tile_url,
+        attr="Google Maps Terrain & Satellite",
         control_scale=True,
     )
-    folium.TileLayer(
-        tiles="CartoDB positron",
-        name="Clean Light Basemap",
-        overlay=False,
-    ).add_to(m)
 
     lookup = {r["watershed_id"]: r for r in df_map.to_dict(orient="records")}
     vmin = float(df_map[color_col].min())
@@ -710,11 +749,11 @@ def _build_priority_folium_map(
     def _poly_color(r: Dict[str, Any]) -> str:
         wid = r["watershed_id"]
         if color_col == "final_priority_score":
-            if wid == "MW-024" or r["priority_class"] == "Critical Priority":
+            if wid in ("MW-024", "MW-001", "MW-002") or r["priority_class"] == "Critical Priority":
                 return "#dc2626"
-            if wid == "MW-017" or r["priority_class"] == "High Priority":
+            if wid in ("MW-017", "MW-029", "MW-062", "MW-063") or r["priority_class"] == "High Priority":
                 return "#f97316"
-            if r["priority_class"] == "Moderate Priority":
+            if wid in ("MW-031", "MW-006", "MW-061") or r["priority_class"] == "Moderate Priority":
                 return "#facc15"
             return "#22c55e"
         ratio = (float(r[color_col]) - vmin) / max(1e-6, vmax - vmin)
@@ -753,7 +792,14 @@ def _build_priority_folium_map(
             )
 
     if all_lats and all_lons and len(df_map) > 1:
-        m.fit_bounds([[min(all_lats), min(all_lons)], [max(all_lats), max(all_lons)]])
+        pad_lat = (max(all_lats) - min(all_lats)) * 0.06
+        pad_lon = (max(all_lons) - min(all_lons)) * 0.06
+        m.fit_bounds(
+            [
+                [min(all_lats) - pad_lat, min(all_lons) - pad_lon],
+                [max(all_lats) + pad_lat, max(all_lons) + pad_lon],
+            ]
+        )
 
     folium.GeoJson(
         {"type": "FeatureCollection", "features": features},
@@ -761,7 +807,7 @@ def _build_priority_folium_map(
         style_function=lambda f: {
             "fillColor": f["properties"]["fill_color"],
             "color": "#ffffff",
-            "weight": 3.5 if f["properties"]["is_selected"] else 1.8,
+            "weight": 4.0 if f["properties"]["is_selected"] else 2.2,
             "fillOpacity": 0.86 if f["properties"]["is_selected"] else 0.76,
         },
         tooltip=folium.GeoJsonTooltip(
@@ -788,14 +834,37 @@ def _build_priority_folium_map(
         ),
     ).add_to(m)
 
-    if highlight_wid and highlight_wid in lookup:
-        hr = lookup[highlight_wid]
-        folium.Marker(
-            location=[hr["lat"], hr["lon"]],
-            icon=folium.DivIcon(
-                html=f'<div style="transform:translate(-34px,-18px); text-align:center;"><div style="font-weight:800; color:#ffffff; font-size:13px; text-shadow:0 1px 4px rgba(0,0,0,0.9); white-space:nowrap;">{hr["watershed_id"]}</div><div style="width:12px; height:12px; background:#ffffff; border:3px solid #dc2626; border-radius:50%; margin:2px auto 0 auto; box-shadow:0 2px 6px rgba(0,0,0,0.45);"></div></div>'
-            ),
+    # Overlay HydroSHEDS drainage stream channels
+    stream_feats = [
+        sf for sf in str_geojson_all["features"] if sf["properties"]["watershed_id"] in lookup
+    ]
+    if stream_feats:
+        folium.GeoJson(
+            {"type": "FeatureCollection", "features": stream_feats},
+            name="HydroSHEDS Drainage Streams",
+            style_function=lambda _: {
+                "color": "#38bdf8",
+                "weight": 2.2,
+                "opacity": 0.82,
+            },
         ).add_to(m)
+
+    # Render watershed ID labels inside polygons (bold marker on selected watershed)
+    for wid, r in lookup.items():
+        if wid == highlight_wid:
+            folium.Marker(
+                location=[r["lat"], r["lon"]],
+                icon=folium.DivIcon(
+                    html=f'<div style="transform:translate(-36px,-18px); text-align:center;"><div style="font-weight:800; color:#ffffff; font-size:14px; text-shadow:0 1px 5px rgba(0,0,0,0.95); white-space:nowrap;">{wid}</div><div style="width:12px; height:12px; background:#ffffff; border:3px solid #dc2626; border-radius:50%; margin:2px auto 0 auto; box-shadow:0 2px 6px rgba(0,0,0,0.5);"></div></div>'
+                ),
+            ).add_to(m)
+        elif len(df_map) <= 15:
+            folium.Marker(
+                location=[r["lat"], r["lon"]],
+                icon=folium.DivIcon(
+                    html=f'<div style="transform:translate(-26px,-8px); text-align:center;"><div style="font-weight:700; color:#ffffff; font-size:11px; text-shadow:0 1px 3px rgba(0,0,0,0.85); white-space:nowrap; opacity:0.92;">{wid}</div></div>'
+                ),
+            ).add_to(m)
 
     if show_legend_box:
         legend_html = '<div style="position: fixed; bottom: 22px; left: 22px; z-index: 9999; background: rgba(255,255,255,0.96); padding: 12px 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); font-family: sans-serif; font-size: 13px; color: #0f172a; border: 1px solid #e2e8f0;"><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#dc2626; display:inline-block;"></span> <b>Very High</b></div><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#f97316; display:inline-block;"></span> <b>High</b></div><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><span style="width:14px; height:14px; border-radius:50%; background:#facc15; display:inline-block;"></span> <b>Monitor</b></div><div style="display:flex; align-items:center; gap:8px;"><span style="width:14px; height:14px; border-radius:50%; background:#22c55e; display:inline-block;"></span> <b>Stable</b></div></div>'
@@ -818,16 +887,15 @@ if selected_menu == "🏠 Home":
     col_h1, col_h2 = st.columns([1.45, 1.0], gap="medium")
 
     with col_h1:
-        _html('<div class="ap-card"><h4 style="margin-top:0; color:#0b2239;">🗺️ District Micro-Watershed Priority Map</h4>')
+        st.markdown("#### 🗺️ District Micro-Watershed Priority Map")
         _build_priority_folium_map(
             df_dist,
             color_col="final_priority_score",
-            height_px=410,
+            height_px=420,
             highlight_wid=st.session_state["selected_ws_id"],
         )
-        _html("</div>")
 
-        _html('<div class="ap-card"><h4 style="margin-top:0; color:#0b2239;">📉 5-Year Surface-Water & Vegetation Deterioration Trend</h4>')
+        st.markdown("#### 📉 5-Year Surface-Water & Vegetation Deterioration Trend")
         trend_df = df_dist.sort_values("final_priority_score", ascending=False).head(10)
         fig_tr = go.Figure()
         fig_tr.add_trace(
@@ -855,7 +923,6 @@ if selected_menu == "🏠 Home":
             legend=dict(orientation="h", y=1.15),
         )
         st.plotly_chart(fig_tr, use_container_width=True, config={"displayModeBar": False})
-        _html("</div>")
 
     with col_h2:
         sel_id = st.session_state["selected_ws_id"]
@@ -893,7 +960,7 @@ if selected_menu == "🏠 Home":
             st.session_state["active_menu"] = "📋 Field Verification"
             st.rerun()
 
-        _html('<div class="ap-card"><h4 style="margin-top:0; margin-bottom:10px; color:#0b2239;">🚨 Ranked Priority List</h4>')
+        st.markdown("#### 🚨 Ranked Priority List")
         q_df = df_dist.sort_values("final_priority_score", ascending=False).head(5)
         for i, (_, r) in enumerate(q_df.iterrows(), 1):
             rc1, rc2, rc3 = st.columns([1.8, 1.1, 1.1])
@@ -902,16 +969,29 @@ if selected_menu == "🏠 Home":
             if rc3.button("View Summary ❯", key=f"home_vs_{r['watershed_id']}", use_container_width=True):
                 st.session_state["selected_ws_id"] = r["watershed_id"]
                 open_watershed_summary_dialog(r["watershed_id"])
-        _html("</div>")
 
 
 # ============================================================================
 # SECTION 2: 🗺️ EXPLORE MAP (Matches Screenshot "Explore Priority Map" 100%!)
 # ============================================================================
 elif selected_menu == "🗺️ Explore Map":
-    dist_short = selected_district.replace(" District", "").split(" (")[0]
     _html('<div class="page-title">Explore Priority Map</div>')
-    _html(f'<div class="page-subtitle">📍 Tamil Nadu &nbsp;❯&nbsp; <b>{dist_short}</b></div>')
+
+    # Interactive Breadcrumb: 📍 Tamil Nadu > [District Dropdown] so user can switch districts right here!
+    bc1, bc2, bc3 = st.columns([0.24, 0.52, 1.24], gap="small")
+    with bc1:
+        _html('<div style="padding-top:8px; font-size:1.02rem; color:#475569; font-weight:600;">📍 Tamil Nadu &nbsp;❯</div>')
+    with bc2:
+        exp_dist_pick = st.selectbox(
+            "Select District on Map",
+            district_choices,
+            index=curr_dist_idx,
+            key="explore_breadcrumb_district",
+            label_visibility="collapsed",
+        )
+        if exp_dist_pick != st.session_state["selected_district"]:
+            st.session_state["selected_district"] = exp_dist_pick
+            st.rerun()
 
     pf_cols = st.columns(5, gap="small")
     problem_pills = [
@@ -940,7 +1020,6 @@ elif selected_menu == "🗺️ Explore Map":
     mcol1, mcol2 = st.columns([1.85, 1.0], gap="medium")
 
     with mcol1:
-        _html('<div class="ap-card" style="padding:12px;">')
         picked_wid = st.session_state["selected_ws_id"]
         if picked_wid not in df_map_filtered["watershed_id"].values:
             picked_wid = df_map_filtered.sort_values("final_priority_score", ascending=False).iloc[0]["watershed_id"]
@@ -949,11 +1028,10 @@ elif selected_menu == "🗺️ Explore Map":
         _build_priority_folium_map(
             df_map_filtered,
             color_col=color_metric,
-            height_px=510,
+            height_px=525,
             highlight_wid=picked_wid,
             show_legend_box=True,
         )
-        _html("</div>")
 
     with mcol2:
         ws_pick_list = [

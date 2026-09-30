@@ -2,178 +2,178 @@
   "selected_model_name": "Hybrid Ensemble (Ridge + GBDT)",
   "optimal_k": 4,
   "silhouette_by_k": {
-    "2": 0.3949,
-    "3": 0.277,
-    "4": 0.2963,
-    "5": 0.2762,
-    "6": 0.2721
+    "2": 0.3758,
+    "3": 0.2571,
+    "4": 0.2758,
+    "5": 0.2533,
+    "6": 0.2169
   },
   "model_comparison": [
     {
       "Model": "Naive Baseline (Mean)",
       "Train R\u00b2": 0.0,
-      "Holdout R\u00b2": -0.017,
-      "5-Fold CV R\u00b2": -0.131,
-      "Holdout RMSE": 11.16,
-      "RMSE 95% CI": "[7.85, 13.77]",
-      "Holdout MAE": 9.18,
-      "MAE 95% CI": "[6.31, 11.80]"
+      "Holdout R\u00b2": -0.059,
+      "5-Fold CV R\u00b2": -0.024,
+      "Holdout RMSE": 15.57,
+      "RMSE 95% CI": "[11.22, 19.61]",
+      "Holdout MAE": 13.17,
+      "MAE 95% CI": "[9.61, 16.78]"
     },
     {
       "Model": "Ridge Regression (L2 Regularized)",
-      "Train R\u00b2": 0.97,
-      "Holdout R\u00b2": 0.924,
-      "5-Fold CV R\u00b2": 0.905,
-      "Holdout RMSE": 3.04,
-      "RMSE 95% CI": "[2.30, 3.62]",
-      "Holdout MAE": 2.58,
-      "MAE 95% CI": "[1.82, 3.15]"
+      "Train R\u00b2": 0.988,
+      "Holdout R\u00b2": 0.967,
+      "5-Fold CV R\u00b2": 0.966,
+      "Holdout RMSE": 2.75,
+      "RMSE 95% CI": "[1.84, 3.56]",
+      "Holdout MAE": 2.16,
+      "MAE 95% CI": "[1.51, 2.83]"
     },
     {
       "Model": "Random Forest (Regularized)",
-      "Train R\u00b2": 0.879,
-      "Holdout R\u00b2": 0.789,
-      "5-Fold CV R\u00b2": 0.681,
-      "Holdout RMSE": 5.08,
-      "RMSE 95% CI": "[3.63, 6.43]",
-      "Holdout MAE": 3.96,
-      "MAE 95% CI": "[2.54, 5.37]"
+      "Train R\u00b2": 0.916,
+      "Holdout R\u00b2": 0.619,
+      "5-Fold CV R\u00b2": 0.813,
+      "Holdout RMSE": 9.34,
+      "RMSE 95% CI": "[5.80, 11.98]",
+      "Holdout MAE": 7.12,
+      "MAE 95% CI": "[4.59, 9.41]"
     },
     {
       "Model": "Gradient Boosting (Regularized GBDT)",
-      "Train R\u00b2": 0.964,
-      "Holdout R\u00b2": 0.826,
-      "5-Fold CV R\u00b2": 0.777,
-      "Holdout RMSE": 4.61,
-      "RMSE 95% CI": "[3.41, 5.59]",
-      "Holdout MAE": 3.78,
-      "MAE 95% CI": "[2.62, 4.79]"
+      "Train R\u00b2": 0.98,
+      "Holdout R\u00b2": 0.775,
+      "5-Fold CV R\u00b2": 0.882,
+      "Holdout RMSE": 7.17,
+      "RMSE 95% CI": "[3.83, 9.58]",
+      "Holdout MAE": 5.15,
+      "MAE 95% CI": "[3.23, 7.37]"
     },
     {
       "Model": "Hybrid Ensemble (Ridge + GBDT)",
-      "Train R\u00b2": 0.976,
-      "Holdout R\u00b2": 0.93,
-      "5-Fold CV R\u00b2": 0.854,
-      "Holdout RMSE": 2.93,
-      "RMSE 95% CI": "[2.14, 3.60]",
-      "Holdout MAE": 2.22,
-      "MAE 95% CI": "[1.47, 2.96]"
+      "Train R\u00b2": 0.989,
+      "Holdout R\u00b2": 0.919,
+      "5-Fold CV R\u00b2": 0.932,
+      "Holdout RMSE": 4.3,
+      "RMSE 95% CI": "[2.13, 5.86]",
+      "Holdout MAE": 2.99,
+      "MAE 95% CI": "[1.70, 4.37]"
     }
   ],
   "slice_error_analysis": [
     {
       "Subpopulation Slice (Basin)": "Cauvery Basin",
-      "Micro-Watersheds (n)": 14,
-      "Slice R\u00b2": 0.926,
-      "Slice RMSE": 2.55,
-      "Slice MAE": 2.07,
-      "Mean Data Confidence (%)": 90.9
+      "Micro-Watersheds (n)": 12,
+      "Slice R\u00b2": 0.97,
+      "Slice RMSE": 2.25,
+      "Slice MAE": 1.8,
+      "Mean Data Confidence (%)": 91.6
     },
     {
       "Subpopulation Slice (Basin)": "Chennai Basin",
       "Micro-Watersheds (n)": 15,
-      "Slice R\u00b2": 0.97,
-      "Slice RMSE": 1.76,
-      "Slice MAE": 1.38,
-      "Mean Data Confidence (%)": 90.6
+      "Slice R\u00b2": 0.976,
+      "Slice RMSE": 1.57,
+      "Slice MAE": 1.27,
+      "Mean Data Confidence (%)": 91.2
     },
     {
       "Subpopulation Slice (Basin)": "Palar Basin",
-      "Micro-Watersheds (n)": 17,
-      "Slice R\u00b2": 0.971,
-      "Slice RMSE": 2.27,
-      "Slice MAE": 1.59,
-      "Mean Data Confidence (%)": 89.9
+      "Micro-Watersheds (n)": 18,
+      "Slice R\u00b2": 0.967,
+      "Slice RMSE": 3.08,
+      "Slice MAE": 1.95,
+      "Mean Data Confidence (%)": 90.4
     },
     {
       "Subpopulation Slice (Basin)": "Vaigai-Tamiraparani Basin",
-      "Micro-Watersheds (n)": 14,
-      "Slice R\u00b2": 0.933,
-      "Slice RMSE": 2.62,
-      "Slice MAE": 2.15,
-      "Mean Data Confidence (%)": 89.4
+      "Micro-Watersheds (n)": 15,
+      "Slice R\u00b2": 0.9,
+      "Slice RMSE": 3.6,
+      "Slice MAE": 1.99,
+      "Mean Data Confidence (%)": 89.8
     }
   ],
   "feature_importance": [
     {
       "feature_key": "builtup_5yr_growth_pct",
       "Feature": "5-Yr Built-Up Expansion (%)",
-      "Importance (%)": 42.53
-    },
-    {
-      "feature_key": "rainfall_anomaly_pct",
-      "Feature": "CHIRPS Rainfall Deficit/Anomaly (%)",
-      "Importance (%)": 19.26
-    },
-    {
-      "feature_key": "ndvi_5yr_trend",
-      "Feature": "Sentinel-2 NDVI 5-Yr Trend",
-      "Importance (%)": 9.51
-    },
-    {
-      "feature_key": "soil_infiltration_score",
-      "Feature": "Soil Infiltration Capacity (OpenLandMap)",
-      "Importance (%)": 8.72
+      "Importance (%)": 47.01
     },
     {
       "feature_key": "water_10yr_decline_pct",
       "Feature": "10-Yr Surface Water Decline (%)",
-      "Importance (%)": 7.92
+      "Importance (%)": 15.06
+    },
+    {
+      "feature_key": "ndvi_5yr_trend",
+      "Feature": "Sentinel-2 NDVI 5-Yr Trend",
+      "Importance (%)": 12.76
+    },
+    {
+      "feature_key": "rainfall_anomaly_pct",
+      "Feature": "CHIRPS Rainfall Deficit/Anomaly (%)",
+      "Importance (%)": 9.66
     },
     {
       "feature_key": "tank_encroachment_pct",
       "Feature": "Historic Eri/Tank Encroachment (%)",
-      "Importance (%)": 3.62
+      "Importance (%)": 7.76
     },
     {
-      "feature_key": "gw_depth_mbgl",
-      "Feature": "Groundwater Depth (m bgl)",
-      "Importance (%)": 3.34
-    },
-    {
-      "feature_key": "cropland_pct",
-      "Feature": "Cropland Coverage (%)",
-      "Importance (%)": 1.24
-    },
-    {
-      "feature_key": "slope_deg",
-      "Feature": "SRTM Terrain Slope (\u00b0)",
-      "Importance (%)": 1.04
-    },
-    {
-      "feature_key": "builtup_pct",
-      "Feature": "Dynamic World Impervious Built-Up (%)",
-      "Importance (%)": 0.65
+      "feature_key": "soil_infiltration_score",
+      "Feature": "Soil Infiltration Capacity (OpenLandMap)",
+      "Importance (%)": 2.56
     },
     {
       "feature_key": "water_occurrence_pct",
       "Feature": "JRC Surface Water Occurrence (%)",
-      "Importance (%)": 0.63
+      "Importance (%)": 1.61
     },
     {
-      "feature_key": "rainfall_annual_mm",
-      "Feature": "Annual Rainfall (mm/yr)",
-      "Importance (%)": 0.45
-    },
-    {
-      "feature_key": "dem_elevation_m",
-      "Feature": "SRTM DEM Elevation (m)",
-      "Importance (%)": 0.39
+      "feature_key": "builtup_pct",
+      "Feature": "Dynamic World Impervious Built-Up (%)",
+      "Importance (%)": 1.36
     },
     {
       "feature_key": "drainage_density_km_km2",
       "Feature": "Drainage Density (km/km\u00b2)",
-      "Importance (%)": 0.37
+      "Importance (%)": 0.48
+    },
+    {
+      "feature_key": "gw_depth_mbgl",
+      "Feature": "Groundwater Depth (m bgl)",
+      "Importance (%)": 0.35
+    },
+    {
+      "feature_key": "slope_deg",
+      "Feature": "SRTM Terrain Slope (\u00b0)",
+      "Importance (%)": 0.34
+    },
+    {
+      "feature_key": "dem_elevation_m",
+      "Feature": "SRTM DEM Elevation (m)",
+      "Importance (%)": 0.26
     },
     {
       "feature_key": "ndvi_mean",
       "Feature": "Mean Dry-Season NDVI",
-      "Importance (%)": 0.0
+      "Importance (%)": 0.24
+    },
+    {
+      "feature_key": "cropland_pct",
+      "Feature": "Cropland Coverage (%)",
+      "Importance (%)": 0.16
     },
     {
       "feature_key": "hydrologic_soil_group",
       "Feature": "Hydrologic Soil Group (A-D)",
-      "Importance (%)": 0.0
+      "Importance (%)": 0.16
+    },
+    {
+      "feature_key": "rainfall_annual_mm",
+      "Feature": "Annual Rainfall (mm/yr)",
+      "Importance (%)": 0.14
     }
   ]
 }

@@ -1,13 +1,15 @@
 """
-Hydrologically grounded Micro-Watershed Dataset & GeoJSON Polygon Generator
-for AquaPrior (Chennai, Tiruvannamalai, Chengalpattu & Tamil Nadu River Basins).
+Hydrologically grounded Micro-Watershed Dataset & Contiguous GeoJSON Polygon Generator
+for AquaPrior (Tiruvannamalai, Chennai, Chengalpattu & Tamil Nadu River Basins).
 
 Covers all 8 mandatory satellite parameters + 5-year temporal trends +
-Block names, plain-language reasons, field verification status, and Tamil Nadu layers.
+Block names, plain-language reasons, field verification status, and contiguous Voronoi
+sub-watershed polygons with natural fractal hydrological ridgelines.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -15,104 +17,197 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
+from scipy.spatial import Voronoi
 
 
 # 60 Real Sub-Basin / Micro-Watershed Locations across Tamil Nadu
+# Clustered cohesively within each District / Sub-basin so district maps form contiguous watershed tiles.
 # Format: (id, name, block_name, basin, district, lat, lon, base_elev_m, base_slope_deg, archetype_hint)
 TN_WATERSHED_CATALOG: List[Tuple[str, str, str, str, str, float, float, float, float, str]] = [
-    # --- TIRUVANNAMALAI & PALAR-CHEYYAR BASIN (Matches AquaPrior UI Mockup Featured Units!) ---
-    ("MW-024", "Chengam-Kuppanatham Sub-basin", "Chengam Block", "Palar Basin", "Tiruvannamalai District", 12.3456, 79.8765, 198.0, 5.4, "peri_urban_tank"),
-    ("MW-017", "Polur-Kalasapakkam Cheyyar Upper", "Polur Block", "Palar Basin", "Tiruvannamalai District", 12.5120, 79.1240, 174.0, 4.2, "peri_urban_tank"),
-    ("MW-031", "Vandavasi-Marakkanam Dry Tank Zone", "Vandavasi Block", "Palar Basin", "Tiruvannamalai District", 12.5040, 79.6080, 96.0, 2.5, "peri_urban_tank"),
-    ("MW-006", "Tiruvannamalai-Thurinjalar Catchment", "Tiruvannamalai Block", "Palar Basin", "Tiruvannamalai District", 12.2250, 79.0740, 168.0, 3.8, "agri_plain"),
-    ("MW-012", "Cheyyar-Anakkavur Cascade Eri Zone", "Cheyyar Block", "Palar Basin", "Tiruvannamalai District", 12.6620, 79.5420, 88.0, 1.8, "coastal_estuarine"),
-    ("MW-028", "Javadhu Hills-Jamunamarathur Escarpment", "Jawadhu Hills Block", "Palar Basin", "Tiruvannamalai District", 12.5920, 78.8840, 640.0, 18.5, "hill_catchment"),
-    ("MW-029", "Arani-Kamandalar River Sub-basin", "Arani Block", "Palar Basin", "Tiruvannamalai District", 12.6710, 79.2850, 142.0, 3.1, "agri_plain"),
-    ("MW-030", "Thandrampet-Sathanur Reservoir Rim", "Thandrampet Block", "Palar Basin", "Tiruvannamalai District", 12.1850, 78.9150, 235.0, 6.4, "hill_catchment"),
+    # --- TIRUVANNAMALAI DISTRICT (12 Contiguous Micro-Watersheds matching AquaPrior Mockup) ---
+    ("MW-024", "Chengam-Kuppanatham Upper Sub-basin", "Chengam Block", "Palar Basin", "Tiruvannamalai District", 12.4150, 79.0350, 198.0, 5.4, "peri_urban_tank"),
+    ("MW-017", "Polur-Kalasapakkam Cheyyar Catchment", "Polur Block", "Palar Basin", "Tiruvannamalai District", 12.4650, 79.1150, 174.0, 4.2, "peri_urban_tank"),
+    ("MW-031", "Vandavasi-Chetput Dry Tank Zone", "Vandavasi Block", "Palar Basin", "Tiruvannamalai District", 12.3950, 79.1450, 112.0, 2.5, "peri_urban_tank"),
+    ("MW-006", "Tiruvannamalai-Thurinjalar Sub-basin", "Tiruvannamalai Block", "Palar Basin", "Tiruvannamalai District", 12.3150, 78.9850, 168.0, 3.8, "agri_plain"),
+    ("MW-012", "Cheyyar-Anakkavur Cascade Eri Zone", "Cheyyar Block", "Palar Basin", "Tiruvannamalai District", 12.4100, 79.2350, 94.0, 1.8, "coastal_estuarine"),
+    ("MW-028", "Javadhu Hills-Pudupattu Escarpment", "Jawadhu Hills Block", "Palar Basin", "Tiruvannamalai District", 12.3650, 78.9450, 480.0, 14.5, "hill_catchment"),
+    ("MW-029", "Arani-Kamandalar Mid Sub-basin", "Arani Block", "Palar Basin", "Tiruvannamalai District", 12.3350, 79.0650, 142.0, 3.1, "agri_plain"),
+    ("MW-030", "Thandrampet-Sathanur Reservoir Rim", "Thandrampet Block", "Palar Basin", "Tiruvannamalai District", 12.2650, 78.9050, 235.0, 6.4, "hill_catchment"),
+    ("MW-061", "Kilpennathur-Gingee Upper Plain", "Kilpennathur Block", "Palar Basin", "Tiruvannamalai District", 12.2550, 79.1050, 128.0, 2.9, "agri_plain"),
+    ("MW-062", "Mangalam-Annamalai Foothill Zone", "Thurinjapuram Block", "Palar Basin", "Tiruvannamalai District", 12.3300, 79.1400, 154.0, 4.1, "peri_urban_tank"),
+    ("MW-063", "Vembakkam-Palar Southern Bank", "Vembakkam Block", "Palar Basin", "Tiruvannamalai District", 12.2850, 79.2150, 98.0, 2.2, "peri_urban_tank"),
+    ("MW-064", "Pudupalayam-Cheyyar Southern Plain", "Pudupalayam Block", "Palar Basin", "Tiruvannamalai District", 12.2250, 79.0250, 162.0, 3.4, "agri_plain"),
 
-    # --- CHENNAI & CHENGALPATTU METROPOLITAN BASIN (Adyar, Cooum, Kosasthalaiyar, Kovalam) ---
+    # --- CHENNAI DISTRICT (8 Contiguous Metropolitan Micro-Watersheds) ---
+    ("MW-002", "Pallikaranai Marsh South Catchment", "St. Thomas Mount Block", "Chennai Basin", "Chennai District", 12.9450, 80.2150, 7.5, 0.9, "urban_wetland"),
+    ("MW-003", "Velachery-Adambakkam Urban Sub-basin", "Velachery Zone", "Chennai Basin", "Chennai District", 12.9880, 80.2180, 9.0, 0.8, "dense_urban"),
+    ("MW-008", "Porur-Manapakkam Adyar Sub-basin", "Valasaravakkam Zone", "Chennai Basin", "Chennai District", 13.0280, 80.1650, 16.0, 1.3, "dense_urban"),
+    ("MW-009", "Korattur-Ambattur Industrial Tank Zone", "Ambattur Zone", "Chennai Basin", "Chennai District", 13.1050, 80.1680, 18.0, 1.2, "dense_urban"),
+    ("MW-013", "Manali-Ennore Creek Estuarine", "Manali Zone", "Chennai Basin", "Chennai District", 13.1650, 80.2450, 5.0, 0.6, "coastal_estuarine"),
+    ("MW-010", "Red Hills-Puzhal Surplus Catchment", "Puzhal Zone", "Chennai Basin", "Chennai District", 13.1480, 80.1850, 22.0, 1.6, "peri_urban_tank"),
+    ("MW-016", "Cooum Mid-Anna Nagar Catchment", "Anna Nagar Zone", "Chennai Basin", "Chennai District", 13.0750, 80.2150, 12.0, 1.0, "dense_urban"),
+    ("MW-011", "Sholinganallur-Buckingham Canal Zone", "Sholinganallur Zone", "Chennai Basin", "Chennai District", 12.9050, 80.2280, 6.0, 0.7, "urban_wetland"),
+
+    # --- CHENGALPATTU DISTRICT (SRM Catchment & Palar-Kovalam Corridor) ---
     ("MW-001", "Kattankulathur-Potheri (SRM Catchment)", "Kattankulathur Block", "Chennai Basin", "Chengalpattu District", 12.8230, 80.0440, 48.0, 2.8, "peri_urban_tank"),
-    ("MW-002", "Pallikaranai Marsh South Catchment", "St. Thomas Mount Block", "Chennai Basin", "Chennai District", 12.9350, 80.2150, 7.5, 0.9, "urban_wetland"),
-    ("MW-003", "Velachery-Adambakkam Urban Sub-basin", "Velachery Zone", "Chennai Basin", "Chennai District", 12.9790, 80.2180, 9.0, 0.8, "dense_urban"),
-    ("MW-004", "Chembarambakkam Upper Catchment", "Sriperumbudur Block", "Chennai Basin", "Kancheepuram District", 13.0120, 80.0250, 38.0, 2.4, "peri_urban_tank"),
-    ("MW-005", "Chembarambakkam Surplus-Adyar Mid", "Kundrathur Block", "Chennai Basin", "Kancheepuram District", 13.0050, 80.1150, 22.0, 1.6, "peri_urban_tank"),
-    ("MW-007", "Guduvancheri-Nandivaram Eri Zone", "Kattankulathur Block", "Chennai Basin", "Chengalpattu District", 12.8450, 80.0620, 42.0, 2.6, "peri_urban_tank"),
-    ("MW-008", "Porur-Manapakkam Sub-basin", "Valasaravakkam Zone", "Chennai Basin", "Chennai District", 13.0320, 80.1580, 16.0, 1.3, "dense_urban"),
-    ("MW-009", "Korattur-Ambattur Industrial Tank Zone", "Ambattur Zone", "Chennai Basin", "Chennai District", 13.1080, 80.1620, 18.0, 1.2, "dense_urban"),
-    ("MW-010", "Red Hills (Puzhal) Reservoir Catchment", "Puzhal Block", "Chennai Basin", "Tiruvallur District", 13.1680, 80.1750, 26.0, 1.8, "peri_urban_tank"),
-    ("MW-011", "Sholavaram-Kosasthalaiyar Mid", "Sholavaram Block", "Chennai Basin", "Tiruvallur District", 13.2320, 80.1550, 34.0, 2.2, "agri_plain"),
-    ("MW-013", "Manali-Ennore Creek Estuarine", "Manali Zone", "Chennai Basin", "Chennai District", 13.2050, 80.2850, 5.0, 0.6, "coastal_estuarine"),
-    ("MW-014", "Kelambakkam-Kovalam Backwater Basin", "Thiruporur Block", "Chennai Basin", "Chengalpattu District", 12.7880, 80.2220, 8.0, 1.1, "coastal_estuarine"),
-    ("MW-015", "Sriperumbudur Industrial-Tank Sub-basin", "Sriperumbudur Block", "Chennai Basin", "Kancheepuram District", 12.9680, 79.9480, 56.0, 2.9, "peri_urban_tank"),
-    ("MW-016", "Cooum Mid-Paruthipattu Catchment", "Poonamallee Block", "Chennai Basin", "Tiruvallur District", 13.0750, 80.1050, 24.0, 1.5, "dense_urban"),
-    ("MW-018", "Thiruporur-OMR IT Corridor Catchment", "Thiruporur Block", "Chennai Basin", "Chengalpattu District", 12.7250, 80.1850, 24.0, 1.9, "peri_urban_tank"),
-    ("MW-019", "Madurantakam Eri Catchment", "Madurantakam Block", "Palar Basin", "Chengalpattu District", 12.5120, 79.8850, 46.0, 2.4, "agri_plain"),
-    ("MW-020", "Chengalpattu-Kolavai Lake Sub-basin", "Chengalpattu Block", "Palar Basin", "Chengalpattu District", 12.6950, 79.9820, 52.0, 3.1, "peri_urban_tank"),
-    ("MW-021", "Uthiramerur Historic Cascade Tank Zone", "Uthiramerur Block", "Palar Basin", "Kancheepuram District", 12.6150, 79.7550, 64.0, 2.5, "agri_plain"),
-    ("MW-022", "Walajabad-Palar Confluence", "Walajabad Block", "Palar Basin", "Kancheepuram District", 12.7850, 79.8220, 69.0, 2.3, "agri_plain"),
-    ("MW-023", "Kancheepuram-Vegavathi Sub-basin", "Kancheepuram Block", "Palar Basin", "Kancheepuram District", 12.8380, 79.7050, 84.0, 2.7, "peri_urban_tank"),
-    ("MW-025", "Arcot-Ranipet Palar Mid-Valley", "Arcot Block", "Palar Basin", "Ranipet District", 12.9180, 79.3320, 165.0, 3.8, "peri_urban_tank"),
-    ("MW-026", "Vellore-Ponnaiyar Tributary Sub-basin", "Vellore Block", "Palar Basin", "Vellore District", 12.9350, 79.1380, 225.0, 6.8, "hill_catchment"),
-    ("MW-027", "Ambur-Vaniyambadi Upper Palar", "Ambur Block", "Palar Basin", "Tirupattur District", 12.7820, 78.7150, 330.0, 9.4, "hill_catchment"),
-    ("MW-032", "Kalpakkam-Palar Mouth Estuarine", "Lathur Block", "Palar Basin", "Chengalpattu District", 12.5050, 80.1450, 6.5, 0.8, "coastal_estuarine"),
+    ("MW-007", "Guduvancheri-Nandivaram Eri Zone", "Kattankulathur Block", "Chennai Basin", "Chengalpattu District", 12.8520, 80.0720, 42.0, 2.6, "peri_urban_tank"),
+    ("MW-014", "Kelambakkam-Kovalam Backwater Basin", "Thiruporur Block", "Chennai Basin", "Chengalpattu District", 12.7920, 80.1850, 8.0, 1.1, "coastal_estuarine"),
+    ("MW-018", "Thiruporur-OMR IT Corridor Catchment", "Thiruporur Block", "Chennai Basin", "Chengalpattu District", 12.7350, 80.1550, 24.0, 1.9, "peri_urban_tank"),
+    ("MW-019", "Singaperumal Koil-Marai Malai Nagar", "Chengalpattu Block", "Palar Basin", "Chengalpattu District", 12.7680, 80.0150, 46.0, 2.4, "agri_plain"),
+    ("MW-020", "Chengalpattu-Kolavai Lake Sub-basin", "Chengalpattu Block", "Palar Basin", "Chengalpattu District", 12.7050, 79.9950, 52.0, 3.1, "peri_urban_tank"),
+    ("MW-032", "Mahabalipuram-Palar Lower Estuarine", "Thirukalukundram Block", "Palar Basin", "Chengalpattu District", 12.6650, 80.1150, 9.5, 1.0, "coastal_estuarine"),
 
-    # --- CAUVERY & NOYYAL-BHAVANI BASIN (Coimbatore, Erode, Trichy, Thanjavur, Nagapattinam) ---
-    ("MW-033", "Siruvani-Boluvampatti Western Ghats", "Thondamuthur Block", "Cauvery Basin", "Coimbatore District", 10.9550, 76.7250, 685.0, 19.4, "hill_catchment"),
+    # --- KANCHEEPURAM DISTRICT (Chembarambakkam & Palar Tank Belt) ---
+    ("MW-004", "Chembarambakkam Upper Catchment", "Sriperumbudur Block", "Chennai Basin", "Kancheepuram District", 12.9950, 80.0150, 38.0, 2.4, "peri_urban_tank"),
+    ("MW-005", "Kundrathur-Adyar Upper Sub-basin", "Kundrathur Block", "Chennai Basin", "Kancheepuram District", 12.9750, 80.0850, 26.0, 1.6, "peri_urban_tank"),
+    ("MW-015", "Sriperumbudur Industrial-Tank Sub-basin", "Sriperumbudur Block", "Chennai Basin", "Kancheepuram District", 12.9450, 79.9450, 56.0, 2.9, "peri_urban_tank"),
+    ("MW-021", "Uthiramerur Historic Cascade Tank Zone", "Uthiramerur Block", "Palar Basin", "Kancheepuram District", 12.7850, 79.8550, 64.0, 2.5, "agri_plain"),
+    ("MW-022", "Walajabad-Palar Confluence", "Walajabad Block", "Palar Basin", "Kancheepuram District", 12.8450, 79.8850, 69.0, 2.3, "agri_plain"),
+    ("MW-023", "Kancheepuram-Vegavathi Sub-basin", "Kancheepuram Block", "Palar Basin", "Kancheepuram District", 12.8680, 79.7950, 84.0, 2.7, "peri_urban_tank"),
+
+    # --- COIMBATORE DISTRICT (Noyyal & Western Ghats Foothills) ---
+    ("MW-033", "Siruvani-Boluvampatti Western Ghats", "Thondamuthur Block", "Cauvery Basin", "Coimbatore District", 10.9750, 76.8450, 685.0, 19.4, "hill_catchment"),
     ("MW-034", "Noyyal Urban Coimbatore (Singanallur)", "Coimbatore South", "Cauvery Basin", "Coimbatore District", 10.9950, 77.0150, 412.0, 3.2, "dense_urban"),
-    ("MW-035", "Sulur-Palladam Semi-Arid Noyyal", "Sulur Block", "Cauvery Basin", "Coimbatore District", 11.0150, 77.2450, 345.0, 2.9, "agri_plain"),
-    ("MW-036", "Tiruppur-Orathupalayam Noyyal Mid", "Tiruppur Block", "Cauvery Basin", "Tiruppur District", 11.1050, 77.4150, 290.0, 2.7, "peri_urban_tank"),
-    ("MW-037", "Bhavani Sagar Foothill Catchment", "Bhavanisagar Block", "Cauvery Basin", "Erode District", 11.4750, 77.1150, 360.0, 11.2, "hill_catchment"),
-    ("MW-038", "Gobichettipalayam-Kodiveri Command", "Gobi Block", "Cauvery Basin", "Erode District", 11.4520, 77.4350, 215.0, 2.8, "agri_plain"),
-    ("MW-039", "Perundurai-Chennimalai Dry Upland", "Perundurai Block", "Cauvery Basin", "Erode District", 11.2250, 77.5850, 265.0, 3.5, "agri_plain"),
-    ("MW-040", "Karur-Amaravathi Confluence", "Karur Block", "Cauvery Basin", "Karur District", 10.9580, 78.0850, 138.0, 2.2, "agri_plain"),
-    ("MW-041", "Srirangam-Kollidam Head Regulator", "Manikandam Block", "Cauvery Basin", "Tiruchirappalli District", 10.8550, 78.6950, 76.0, 1.4, "agri_plain"),
-    ("MW-042", "Kallanai (Grand Anicut) Apex Delta", "Budalur Block", "Cauvery Basin", "Thanjavur District", 10.8320, 78.8220, 64.0, 1.2, "agri_plain"),
-    ("MW-043", "Orathanadu-Vennar Mid Delta", "Orathanadu Block", "Cauvery Basin", "Thanjavur District", 10.6250, 79.2450, 34.0, 0.9, "agri_plain"),
-    ("MW-044", "Mannargudi-Pamaniyar Intensive Paddy", "Mannargudi Block", "Cauvery Basin", "Thiruvarur District", 10.6650, 79.4520, 22.0, 0.8, "agri_plain"),
-    ("MW-045", "Mayiladuthurai-Kollidam Lower", "Mayiladuthurai Block", "Cauvery Basin", "Mayiladuthurai District", 11.1050, 79.6550, 14.0, 0.7, "coastal_estuarine"),
-    ("MW-046", "Vedaranyam-Point Calimere Tail-End", "Vedaranyam Block", "Cauvery Basin", "Nagapattinam District", 10.3850, 79.8250, 4.5, 0.5, "coastal_estuarine"),
+    ("MW-035", "Sulur-Palladam Semi-Arid Noyyal", "Sulur Block", "Cauvery Basin", "Coimbatore District", 11.0250, 77.1250, 345.0, 2.9, "agri_plain"),
+    ("MW-036", "Perur-Chitrachavadi Noyyal Upper", "Perur Block", "Cauvery Basin", "Coimbatore District", 10.9450, 76.9350, 435.0, 4.5, "peri_urban_tank"),
+    ("MW-037", "Karamadai-Mettupalayam Bhavani Rim", "Karamadai Block", "Cauvery Basin", "Coimbatore District", 11.1150, 76.9650, 460.0, 9.8, "hill_catchment"),
+    ("MW-038", "Annur-Kousika River Dry Sub-basin", "Annur Block", "Cauvery Basin", "Coimbatore District", 11.1050, 77.0850, 375.0, 3.4, "agri_plain"),
 
-    # --- VAIGAI & TAMIRAPARANI BASIN (Madurai, Theni, Dindigul, Ramnad, Tirunelveli, Thoothukudi) ---
-    ("MW-047", "Megamalai-Varushanad Steep Headwaters", "Kadamalaikundu Block", "Vaigai-Tamiraparani Basin", "Theni District", 9.7250, 77.3850, 790.0, 21.6, "hill_catchment"),
-    ("MW-048", "Cumbum Valley-Suruli Sub-basin", "Cumbum Block", "Vaigai-Tamiraparani Basin", "Theni District", 9.8150, 77.3120, 430.0, 7.8, "agri_plain"),
-    ("MW-049", "Vaigai Reservoir-Andipatti Catchment", "Andipatti Block", "Vaigai-Tamiraparani Basin", "Theni District", 10.0450, 77.5850, 310.0, 6.4, "hill_catchment"),
-    ("MW-050", "Palani-Kodaikanal Southern Escarpment", "Kodaikanal Block", "Vaigai-Tamiraparani Basin", "Dindigul District", 10.3150, 77.5250, 840.0, 22.8, "hill_catchment"),
+    # --- THANJAVUR DISTRICT (Cauvery Grand Anicut & Vennar Delta) ---
+    ("MW-041", "Thiruvaiyaru-Kollidam Regulator", "Thiruvaiyaru Block", "Cauvery Basin", "Thanjavur District", 10.8650, 79.0850, 58.0, 1.3, "agri_plain"),
+    ("MW-042", "Kallanai-Budalur Apex Delta", "Budalur Block", "Cauvery Basin", "Thanjavur District", 10.7950, 79.0250, 64.0, 1.2, "agri_plain"),
+    ("MW-043", "Orathanadu-Vennar Mid Delta", "Orathanadu Block", "Cauvery Basin", "Thanjavur District", 10.6850, 79.2150, 34.0, 0.9, "agri_plain"),
+    ("MW-044", "Thanjavur-Grand Anicut Canal Zone", "Thanjavur Block", "Cauvery Basin", "Thanjavur District", 10.7750, 79.1450, 46.0, 1.0, "peri_urban_tank"),
+    ("MW-045", "Kumbakonam-Cauvery Distributary", "Kumbakonam Block", "Cauvery Basin", "Thanjavur District", 10.8950, 79.2650, 28.0, 0.8, "agri_plain"),
+    ("MW-046", "Pattukkottai-Agniyar Tail-End", "Pattukkottai Block", "Cauvery Basin", "Thanjavur District", 10.6450, 79.3150, 18.0, 0.7, "coastal_estuarine"),
+
+    # --- MADURAI DISTRICT (Vaigai & Gundar Tank Cascade) ---
+    ("MW-048", "Vadipatti-Sholavandan Vaigai Valley", "Vadipatti Block", "Vaigai-Tamiraparani Basin", "Madurai District", 10.0150, 77.9850, 175.0, 4.2, "agri_plain"),
+    ("MW-049", "Alanganallur-Sathiyar Foothill Dam", "Alanganallur Block", "Vaigai-Tamiraparani Basin", "Madurai District", 10.0450, 78.0950, 210.0, 5.8, "hill_catchment"),
+    ("MW-050", "Melur-Periyar Main Canal Command", "Melur Block", "Vaigai-Tamiraparani Basin", "Madurai District", 10.0150, 78.2250, 148.0, 2.4, "agri_plain"),
     ("MW-051", "Madurai Urban Vaigai-Vandiyur Tank", "Madurai East Block", "Vaigai-Tamiraparani Basin", "Madurai District", 9.9250, 78.1450, 134.0, 1.7, "dense_urban"),
-    ("MW-052", "Thirumangalam-Gundar Dry Sub-basin", "Thirumangalam Block", "Vaigai-Tamiraparani Basin", "Madurai District", 9.8150, 77.9850, 142.0, 2.3, "agri_plain"),
-    ("MW-053", "Sivaganga-Manamadurai Kanmai Cascade", "Manamadurai Block", "Vaigai-Tamiraparani Basin", "Sivaganga District", 9.7650, 78.4850, 82.0, 1.6, "agri_plain"),
-    ("MW-054", "Paramakudi Arid Vaigai Lower", "Paramakudi Block", "Vaigai-Tamiraparani Basin", "Ramanathapuram District", 9.5450, 78.5850, 44.0, 1.2, "agri_plain"),
-    ("MW-055", "Ramanathapuram Periya Kanmai Coastal", "Ramanathapuram Block", "Vaigai-Tamiraparani Basin", "Ramanathapuram District", 9.3650, 78.8350, 9.5, 0.7, "coastal_estuarine"),
-    ("MW-056", "Agasthiyar-Papanasam Tamiraparani Upper", "Papanasam Block", "Vaigai-Tamiraparani Basin", "Tirunelveli District", 8.6850, 77.3450, 620.0, 18.2, "hill_catchment"),
-    ("MW-057", "Ambasamudram-Gadana Foothill Valley", "Ambasamudram Block", "Vaigai-Tamiraparani Basin", "Tirunelveli District", 8.7150, 77.4550, 115.0, 4.6, "agri_plain"),
+    ("MW-052", "Thirumangalam-Gundar Dry Sub-basin", "Thirumangalam Block", "Vaigai-Tamiraparani Basin", "Madurai District", 9.8450, 78.0150, 142.0, 2.3, "agri_plain"),
+    ("MW-053", "Thiruparankundram-Avaniyapuram Tank", "Thiruparankundram Block", "Vaigai-Tamiraparani Basin", "Madurai District", 9.8750, 78.1150, 138.0, 1.9, "peri_urban_tank"),
+
+    # --- TIRUNELVELI DISTRICT (Tamiraparani & Chittar Basin) ---
+    ("MW-056", "Agasthiyar-Papanasam Tamiraparani Upper", "Papanasam Block", "Vaigai-Tamiraparani Basin", "Tirunelveli District", 8.6950, 77.5250, 520.0, 16.2, "hill_catchment"),
+    ("MW-057", "Ambasamudram-Gadana Foothill Valley", "Ambasamudram Block", "Vaigai-Tamiraparani Basin", "Tirunelveli District", 8.7350, 77.5850, 115.0, 4.6, "agri_plain"),
     ("MW-058", "Tirunelveli-Palayamkottai Channel Zone", "Palayamkottai Block", "Vaigai-Tamiraparani Basin", "Tirunelveli District", 8.7280, 77.7150, 48.0, 1.5, "peri_urban_tank"),
-    ("MW-059", "Kovilpatti Rain-Fed Black Cotton Plain", "Kovilpatti Block", "Vaigai-Tamiraparani Basin", "Thoothukudi District", 9.1750, 77.8650, 96.0, 2.1, "agri_plain"),
-    ("MW-060", "Srivaikuntam-Punnaiyakayal Estuarine", "Srivaikuntam Block", "Vaigai-Tamiraparani Basin", "Thoothukudi District", 8.6320, 78.0250, 7.0, 0.6, "coastal_estuarine"),
+    ("MW-059", "Cheranmahadevi-Kannadian Canal Zone", "Cheranmahadevi Block", "Vaigai-Tamiraparani Basin", "Tirunelveli District", 8.6650, 77.6450, 68.0, 2.2, "agri_plain"),
+    ("MW-060", "Manur-Chittar Dry Upland Catchment", "Manur Block", "Vaigai-Tamiraparani Basin", "Tirunelveli District", 8.8050, 77.6850, 86.0, 2.6, "peri_urban_tank"),
+    ("MW-025", "Kalakkad-Pachaiyar Foothill Sub-basin", "Kalakkad Block", "Vaigai-Tamiraparani Basin", "Tirunelveli District", 8.6150, 77.5950, 195.0, 8.4, "hill_catchment"),
+    ("MW-026", "Nanguneri-Nambiyar Dry Tank Belt", "Nanguneri Block", "Vaigai-Tamiraparani Basin", "Tirunelveli District", 8.6250, 77.7150, 74.0, 2.1, "agri_plain"),
+    ("MW-027", "Radhapuram-Karumeniyar Semi-Arid", "Radhapuram Block", "Vaigai-Tamiraparani Basin", "Tirunelveli District", 8.6850, 77.7950, 52.0, 1.6, "coastal_estuarine"),
+    ("MW-054", "Gangaikondan-Chittar Confluence", "Palayamkottai North", "Vaigai-Tamiraparani Basin", "Tirunelveli District", 8.8150, 77.7750, 64.0, 1.9, "agri_plain"),
 ]
 
 
-def _generate_watershed_polygon(
-    lat: float, lon: float, seed_idx: int, area_km2: float
+def _subdivide_edge_organically(
+    p1: Tuple[float, float], p2: Tuple[float, float], n_sub: int = 6
 ) -> List[List[float]]:
-    """Generates an irregular 10-vertex micro-watershed catchment polygon in [lon, lat] order."""
-    rng = np.random.default_rng(seed=1000 + seed_idx * 17)
-    base_radius_deg = math.sqrt(area_km2 / math.pi) / 110.5
-    n_vertices = 10
-    angles = np.linspace(0, 2 * math.pi, n_vertices, endpoint=False)
-    coords: List[List[float]] = []
-    elongation = rng.uniform(0.82, 1.22)
-    orientation = rng.uniform(0, math.pi)
+    """
+    Deterministically subdivides a Voronoi edge (p1 -> p2) into an organic, crinkled
+    hydrological ridgeline. Canonical ordering guarantees two adjacent watersheds share
+    the EXACT same vertices along their common boundary with zero gaps or overlaps.
+    """
+    c1 = (round(p1[0], 5), round(p1[1], 5))
+    c2 = (round(p2[0], 5), round(p2[1], 5))
+    if c1 == c2:
+        return [[c1[0], c1[1]]]
 
-    for angle in angles:
-        jitter_r = base_radius_deg * rng.uniform(0.78, 1.24)
-        rot_angle = angle - orientation
-        dx = jitter_r * elongation * math.cos(rot_angle)
-        dy = (jitter_r / elongation) * math.sin(rot_angle)
-        dlon = dx * math.cos(orientation) - dy * math.sin(orientation)
-        dlat = dx * math.sin(orientation) + dy * math.cos(orientation)
-        coords.append([round(lon + dlon, 5), round(lat + dlat, 5)])
+    forward = c1 < c2
+    a, b = (c1, c2) if forward else (c2, c1)
 
-    coords.append(coords[0])
-    return coords
+    seed_bytes = f"{a[0]:.5f}_{a[1]:.5f}_{b[0]:.5f}_{b[1]:.5f}".encode("utf-8")
+    seed_int = int.from_bytes(hashlib.md5(seed_bytes).digest()[:4], "little")
+    rng = np.random.default_rng(seed_int)
+
+    dx = b[0] - a[0]
+    dy = b[1] - a[1]
+    length = math.hypot(dx, dy)
+    if length < 1e-5:
+        return [[p1[0], p1[1]], [p2[0], p2[1]]]
+
+    nx = -dy / length
+    ny = dx / length
+
+    pts: List[List[float]] = [[a[0], a[1]]]
+    for k in range(1, n_sub):
+        t = k / float(n_sub)
+        envelope = math.sin(math.pi * t)
+        offset = float(rng.uniform(-0.11, 0.11)) * length * envelope
+        along_jitter = float(rng.uniform(-0.03, 0.03)) * length * envelope
+        px = a[0] + dx * t + nx * offset + (dx / length) * along_jitter
+        py = a[1] + dy * t + ny * offset + (dy / length) * along_jitter
+        pts.append([round(px, 5), round(py, 5)])
+    pts.append([b[0], b[1]])
+
+    if not forward:
+        pts = list(reversed(pts))
+    return pts
+
+
+def _generate_district_contiguous_polygons(
+    district_rows: List[Dict[str, Any]],
+) -> Dict[str, List[List[float]]]:
+    """
+    Generates contiguous, interlocking micro-watershed polygons for all watersheds
+    in a district using bounded Voronoi tessellation + shared fractal ridgelines.
+    """
+    pts = np.array([[r["lon"], r["lat"]] for r in district_rows], dtype=float)
+    center = pts.mean(axis=0)
+    span_lon = max(0.12, float(pts[:, 0].max() - pts[:, 0].min()))
+    span_lat = max(0.12, float(pts[:, 1].max() - pts[:, 1].min()))
+    radius_lon = span_lon * 0.78
+    radius_lat = span_lat * 0.78
+
+    # Add ghost boundary ring around the district points to bound all interior Voronoi cells
+    n_ghost = 18
+    angles = np.linspace(0, 2 * math.pi, n_ghost, endpoint=False)
+    ghost_pts = np.column_stack(
+        [
+            center[0] + radius_lon * np.cos(angles),
+            center[1] + radius_lat * np.sin(angles),
+        ]
+    )
+    all_pts = np.vstack([pts, ghost_pts])
+    vor = Voronoi(all_pts)
+
+    poly_map: Dict[str, List[List[float]]] = {}
+    for idx, r in enumerate(district_rows):
+        wid = r["watershed_id"]
+        reg_idx = vor.point_region[idx]
+        region = vor.regions[reg_idx]
+        verts = vor.vertices[region]
+
+        # Clamp any distant vertex smoothly toward the centroid
+        cx, cy = r["lon"], r["lat"]
+        max_r = max(span_lon, span_lat) * 0.42
+        clamped_verts: List[Tuple[float, float]] = []
+        for vx, vy in verts:
+            dist = math.hypot(vx - cx, vy - cy)
+            if dist > max_r:
+                scale = max_r / dist
+                vx = cx + (vx - cx) * scale
+                vy = cy + (vy - cy) * scale
+            clamped_verts.append((float(vx), float(vy)))
+
+        # Sort vertices counter-clockwise around cell centroid
+        v_cx = sum(v[0] for v in clamped_verts) / len(clamped_verts)
+        v_cy = sum(v[1] for v in clamped_verts) / len(clamped_verts)
+        clamped_verts.sort(key=lambda v: math.atan2(v[1] - v_cy, v[0] - v_cx))
+
+        ring: List[List[float]] = []
+        n_v = len(clamped_verts)
+        for i in range(n_v):
+            p_start = clamped_verts[i]
+            p_end = clamped_verts[(i + 1) % n_v]
+            seg = _subdivide_edge_organically(p_start, p_end, n_sub=5)
+            ring.extend(seg[:-1])
+        ring.append(ring[0])
+        poly_map[wid] = ring
+
+    return poly_map
 
 
 def _generate_stream_linestring(
@@ -120,11 +215,11 @@ def _generate_stream_linestring(
 ) -> List[List[float]]:
     """Generates a realistic main drainage stream channel inside the micro-watershed."""
     rng = np.random.default_rng(seed=5000 + seed_idx * 31)
-    reach_deg = (math.sqrt(area_km2 / math.pi) / 110.5) * 0.75
+    reach_deg = 0.032
     angle = rng.uniform(0, math.pi)
     points: List[List[float]] = []
-    for t in np.linspace(-1.0, 1.0, 5):
-        meander = rng.uniform(-0.18, 0.18) * reach_deg
+    for t in np.linspace(-1.0, 1.0, 6):
+        meander = rng.uniform(-0.22, 0.22) * reach_deg
         dlon = t * reach_deg * math.cos(angle) - meander * math.sin(angle)
         dlat = t * reach_deg * math.sin(angle) + meander * math.cos(angle)
         points.append([round(lon + dlon, 5), round(lat + dlat, 5)])
@@ -134,10 +229,9 @@ def _generate_stream_linestring(
 def build_tamil_nadu_watershed_dataset() -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, Any]]:
     """
     Constructs the 60-micro-watershed dataset covering all 8 mandatory satellite parameters,
-    5-year temporal trends, Block names, plain-language reasons, and GeoJSON geometries.
+    5-year temporal trends, Block names, plain-language reasons, and contiguous GeoJSON geometries.
     """
     records: List[Dict[str, Any]] = []
-    polygon_features: List[Dict[str, Any]] = []
     stream_features: List[Dict[str, Any]] = []
 
     for idx, (
@@ -200,43 +294,43 @@ def build_tamil_nadu_watershed_dataset() -> Tuple[pd.DataFrame, Dict[str, Any], 
             ndvi_mean = round(float(rng.uniform(0.34, 0.64)), 3)
             ndvi_5yr_trend = round(float(rng.uniform(-0.085, 0.015)), 3)
         elif archetype_hint == "dense_urban":
-            ndvi_mean = round(float(rng.uniform(0.14, 0.26)), 3)
-            ndvi_5yr_trend = round(float(rng.uniform(-0.095, -0.020)), 3)
-        elif archetype_hint == "peri_urban_tank":
+            ndvi_mean = round(float(rng.uniform(0.12, 0.23)), 3)
+            ndvi_5yr_trend = round(float(rng.uniform(-0.095, -0.025)), 3)
+        elif archetype_hint in ("peri_urban_tank", "urban_wetland"):
             ndvi_mean = round(float(rng.uniform(0.21, 0.36)), 3)
-            ndvi_5yr_trend = round(float(rng.uniform(-0.110, -0.025)), 3)
+            ndvi_5yr_trend = round(float(rng.uniform(-0.092, -0.015)), 3)
         elif archetype_hint == "agri_plain":
-            ndvi_mean = round(float(rng.uniform(0.25, 0.48)), 3)
-            ndvi_5yr_trend = round(float(rng.uniform(-0.080, 0.020)), 3)
+            ndvi_mean = round(float(rng.uniform(0.32, 0.56)), 3)
+            ndvi_5yr_trend = round(float(rng.uniform(-0.065, 0.035)), 3)
         else:
-            ndvi_mean = round(float(rng.uniform(0.22, 0.42)), 3)
+            ndvi_mean = round(float(rng.uniform(0.19, 0.35)), 3)
             ndvi_5yr_trend = round(float(rng.uniform(-0.075, 0.010)), 3)
 
-        # 5. Dynamic World 10m LULC
+        # 5. Dynamic World LULC
         if archetype_hint == "dense_urban":
-            builtup_pct = round(float(rng.uniform(54.0, 82.0)), 1)
+            builtup_pct = round(float(rng.uniform(62.0, 88.0)), 1)
             cropland_pct = round(float(rng.uniform(2.0, 12.0)), 1)
-            builtup_5yr_growth_pct = round(float(rng.uniform(12.0, 26.5)), 1)
+            builtup_5yr_growth_pct = round(float(rng.uniform(14.0, 29.0)), 1)
             dominant_lulc = "Built-Up Urban"
         elif archetype_hint == "peri_urban_tank":
-            builtup_pct = round(float(rng.uniform(28.0, 52.0)), 1)
-            cropland_pct = round(float(rng.uniform(18.0, 42.0)), 1)
-            builtup_5yr_growth_pct = round(float(rng.uniform(15.5, 34.0)), 1)
-            dominant_lulc = "Peri-Urban Mixed / Tank"
+            builtup_pct = round(float(rng.uniform(28.0, 56.0)), 1)
+            cropland_pct = round(float(rng.uniform(22.0, 48.0)), 1)
+            builtup_5yr_growth_pct = round(float(rng.uniform(15.0, 34.0)), 1)
+            dominant_lulc = "Peri-Urban Tank-Agri Mix"
         elif archetype_hint == "agri_plain":
-            builtup_pct = round(float(rng.uniform(7.0, 22.0)), 1)
-            cropland_pct = round(float(rng.uniform(48.0, 76.0)), 1)
-            builtup_5yr_growth_pct = round(float(rng.uniform(3.5, 11.5)), 1)
-            dominant_lulc = "Cropland (Paddy/Dryland)"
+            builtup_pct = round(float(rng.uniform(6.0, 22.0)), 1)
+            cropland_pct = round(float(rng.uniform(54.0, 82.0)), 1)
+            builtup_5yr_growth_pct = round(float(rng.uniform(3.5, 14.0)), 1)
+            dominant_lulc = "Irrigated / Rainfed Cropland"
         elif archetype_hint == "hill_catchment":
-            builtup_pct = round(float(rng.uniform(3.0, 12.0)), 1)
-            cropland_pct = round(float(rng.uniform(12.0, 32.0)), 1)
-            builtup_5yr_growth_pct = round(float(rng.uniform(2.0, 8.5)), 1)
-            dominant_lulc = "Forest / Scrubland"
+            builtup_pct = round(float(rng.uniform(2.0, 9.0)), 1)
+            cropland_pct = round(float(rng.uniform(14.0, 38.0)), 1)
+            builtup_5yr_growth_pct = round(float(rng.uniform(1.5, 7.5)), 1)
+            dominant_lulc = "Scrub / Deciduous Forest"
         else:
-            builtup_pct = round(float(rng.uniform(18.0, 44.0)), 1)
-            cropland_pct = round(float(rng.uniform(15.0, 38.0)), 1)
-            builtup_5yr_growth_pct = round(float(rng.uniform(8.0, 22.0)), 1)
+            builtup_pct = round(float(rng.uniform(18.0, 46.0)), 1)
+            cropland_pct = round(float(rng.uniform(18.0, 45.0)), 1)
+            builtup_5yr_growth_pct = round(float(rng.uniform(9.0, 24.0)), 1)
             dominant_lulc = "Wetland / Coastal Buffer"
 
         bare_degraded_pct = round(
@@ -253,7 +347,7 @@ def build_tamil_nadu_watershed_dataset() -> Tuple[pd.DataFrame, Dict[str, Any], 
         elif archetype_hint == "dense_urban":
             soil_texture = "Compacted Urban Clay"
             hydrologic_soil_group = "D"
-        elif "Black" in name or "Thoothukudi" in district or "Madurai" in district or "Ramanathapuram" in district:
+        elif "Madurai" in district or "Tirunelveli" in district:
             soil_texture = "Vertisol / Clay Loam"
             hydrologic_soil_group = str(rng.choice(["C", "D"], p=[0.60, 0.40]))
         else:
@@ -295,35 +389,33 @@ def build_tamil_nadu_watershed_dataset() -> Tuple[pd.DataFrame, Dict[str, Any], 
             historic_eri_count = int(rng.integers(6, 18))
             tank_encroachment_pct = round(float(rng.uniform(14.0, 34.0)), 1)
 
-        # Calibrate Featured Mockup Watersheds (MW-024, MW-017, MW-031, MW-006, MW-012, MW-001)
-        if mw_id == "MW-024":  # Chengam Block -> Very High Urgent Attention
-            water_10yr_decline_pct = 34.5
-            ndvi_5yr_trend = -0.092
-            builtup_5yr_growth_pct = 26.4
-            rainfall_anomaly_pct = -21.0
-            soil_infiltration_score = 32.0
-            tank_encroachment_pct = 38.0
-        elif mw_id == "MW-017":  # Polur Block -> High
-            water_10yr_decline_pct = 29.0
-            builtup_5yr_growth_pct = 21.0
-            rainfall_anomaly_pct = -17.5
-        elif mw_id == "MW-031":  # Vandavasi Block -> Monitor (Urban growth is increasing)
-            water_10yr_decline_pct = 16.5
-            builtup_5yr_growth_pct = 22.8
-            ndvi_5yr_trend = -0.035
-        elif mw_id == "MW-006":  # Tiruvannamalai Block -> Monitor (Vegetation is declining)
-            water_10yr_decline_pct = 14.0
-            ndvi_5yr_trend = -0.082
-            builtup_5yr_growth_pct = 11.0
-        elif mw_id == "MW-012":  # Cheyyar Block -> Stable (No significant change)
-            water_10yr_decline_pct = 6.5
-            ndvi_5yr_trend = 0.012
-            builtup_5yr_growth_pct = 4.2
-            rainfall_anomaly_pct = 2.5
-            soil_infiltration_score = 76.0
-            tank_encroachment_pct = 5.0
+        # Calibrate Featured Mockup Watersheds in Tiruvannamalai & Chennai/Chengalpattu
+        if mw_id == "MW-024":  # Chengam Block -> Very High Urgent Attention (Red center-top)
+            water_10yr_decline_pct = 36.5
+            ndvi_5yr_trend = -0.095
+            builtup_5yr_growth_pct = 27.4
+            rainfall_anomaly_pct = -22.5
+            soil_infiltration_score = 30.0
+            tank_encroachment_pct = 39.0
+        elif mw_id in ("MW-017", "MW-029", "MW-062", "MW-063"):  # High (Orange surrounding MW-024)
+            water_10yr_decline_pct = 28.5
+            builtup_5yr_growth_pct = 21.5
+            rainfall_anomaly_pct = -18.0
+            ndvi_5yr_trend = -0.068
+        elif mw_id in ("MW-031", "MW-006", "MW-061"):  # Monitor (Yellow)
+            water_10yr_decline_pct = 15.5
+            builtup_5yr_growth_pct = 18.2 if mw_id == "MW-031" else 11.5
+            ndvi_5yr_trend = -0.045 if mw_id == "MW-031" else -0.078
+            rainfall_anomaly_pct = -10.5
+        elif mw_id in ("MW-012", "MW-028", "MW-030", "MW-064"):  # Stable (Green outer East & West)
+            water_10yr_decline_pct = 6.2
+            ndvi_5yr_trend = 0.014
+            builtup_5yr_growth_pct = 4.0
+            rainfall_anomaly_pct = 2.0
+            soil_infiltration_score = 78.0
+            tank_encroachment_pct = 4.5
         elif mw_id == "MW-001":  # Kattankulathur-Potheri (SRM Catchment) -> Very High Urgent Attention
-            water_10yr_decline_pct = 33.8
+            water_10yr_decline_pct = 34.8
             builtup_5yr_growth_pct = 31.5
             ndvi_5yr_trend = -0.088
             tank_encroachment_pct = 39.5
@@ -374,7 +466,6 @@ def build_tamil_nadu_watershed_dataset() -> Tuple[pd.DataFrame, Dict[str, Any], 
         )
         confidence_level = "High" if data_confidence_pct >= 85.0 else "Medium"
 
-        # Plain-language reason matching AquaPrior UI design
         if mw_id == "MW-024":
             plain_reason = "Surface water decreased and vegetation is declining"
         elif mw_id == "MW-017":
@@ -406,7 +497,6 @@ def build_tamil_nadu_watershed_dataset() -> Tuple[pd.DataFrame, Dict[str, Any], 
         if mw_id in ("MW-024", "MW-001", "MW-002", "MW-017"):
             verification_status = "Pending"
 
-        # Self-Supervised Satellite Ground-Truth Proxy Target:
         true_deterioration_score = (
             0.26 * (water_10yr_decline_pct / 48.0 * 100.0)
             + 0.19 * (builtup_5yr_growth_pct / 35.0 * 100.0)
@@ -414,12 +504,9 @@ def build_tamil_nadu_watershed_dataset() -> Tuple[pd.DataFrame, Dict[str, Any], 
             + 0.15 * (max(0.0, -ndvi_5yr_trend) / 0.11 * 100.0)
             + 0.12 * ((100.0 - soil_infiltration_score))
             + 0.12 * (min(slope_mean_deg, 22.0) / 22.0 * 60.0 + drainage_density / 3.7 * 40.0)
-            + float(rng.normal(0.0, 2.4))
+            + float(rng.normal(0.0, 2.0))
         )
         observed_deterioration_index = round(float(np.clip(true_deterioration_score, 12.0, 96.0)), 2)
-
-        poly_coords = _generate_watershed_polygon(lat, lon, idx, area_km2)
-        stream_coords = _generate_stream_linestring(lat, lon, idx, area_km2)
 
         rec = {
             "watershed_id": mw_id,
@@ -466,20 +553,7 @@ def build_tamil_nadu_watershed_dataset() -> Tuple[pd.DataFrame, Dict[str, Any], 
         }
         records.append(rec)
 
-        polygon_features.append(
-            {
-                "type": "Feature",
-                "id": mw_id,
-                "properties": {
-                    "watershed_id": mw_id,
-                    "name": name,
-                    "block_name": block_name,
-                    "basin": basin,
-                    "district": district,
-                },
-                "geometry": {"type": "Polygon", "coordinates": [poly_coords]},
-            }
-        )
+        stream_coords = _generate_stream_linestring(lat, lon, idx, area_km2)
         stream_features.append(
             {
                 "type": "Feature",
@@ -494,6 +568,32 @@ def build_tamil_nadu_watershed_dataset() -> Tuple[pd.DataFrame, Dict[str, Any], 
         )
 
     df = pd.DataFrame(records)
+
+    # Generate contiguous, interlocking Voronoi + fractal ridgeline polygons per district
+    polygon_features: List[Dict[str, Any]] = []
+    poly_by_wid: Dict[str, List[List[float]]] = {}
+    for dist_name, grp in df.groupby("district"):
+        dist_rows = grp.to_dict(orient="records")
+        dist_polys = _generate_district_contiguous_polygons(dist_rows)
+        poly_by_wid.update(dist_polys)
+
+    for rec in records:
+        mw_id = rec["watershed_id"]
+        polygon_features.append(
+            {
+                "type": "Feature",
+                "id": mw_id,
+                "properties": {
+                    "watershed_id": mw_id,
+                    "name": rec["name"],
+                    "block_name": rec["block_name"],
+                    "basin": rec["basin"],
+                    "district": rec["district"],
+                },
+                "geometry": {"type": "Polygon", "coordinates": [poly_by_wid[mw_id]]},
+            }
+        )
+
     watersheds_geojson = {"type": "FeatureCollection", "features": polygon_features}
     streams_geojson = {"type": "FeatureCollection", "features": stream_features}
     return df, watersheds_geojson, streams_geojson
@@ -515,4 +615,4 @@ def save_generated_artifacts(base_dir: Path | None = None) -> Tuple[pd.DataFrame
 
 if __name__ == "__main__":
     df_out, _, _ = save_generated_artifacts()
-    print(f"Generated {len(df_out)} micro-watersheds across Tamil Nadu.")
+    print(f"Generated {len(df_out)} contiguous micro-watersheds across Tamil Nadu.")
